@@ -824,6 +824,38 @@ export default function MainPage() {
                 content: uiComponentContent,
             });
 
+            // Generate package.json file for the project
+            const packageJsonContent = JSON.stringify({
+                name: "webcontainer-project",
+                version: "1.0.0",
+                private: true,
+                scripts: {
+                    dev: "next dev",
+                    build: "next build",
+                    lint: "eslint . --ext .js,.jsx,.ts,.tsx"
+                },
+                dependencies: {
+                    "next": "^14.0.0",
+                    "react": "^18.2.0",
+                    "react-dom": "^18.2.0",
+                    "convex": "^1.0.0",
+                },
+                devDependencies: {
+                    "@types/node": "^20.0.0",
+                    "@types/react": "^18.2.0",
+                    "typescript": "^5.0.0",
+                    "eslint": "^8.0.0"
+                }
+            }, null, 2);
+
+            // Create the package.json artifact
+            await ctx.runMutation(api.artifacts.upsert, {
+                projectId,
+                path: "package.json",
+                content: packageJsonContent,
+            });
+
+
             const genEndTime = Date.now();
             const genDuration = genEndTime - genStartTime;
             metrics.timings.genMs = genDuration;

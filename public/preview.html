@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>App Preview</title>
+  <style>
+    body, html {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      width: 100%;
+      overflow: hidden;
+    }
+    iframe {
+      width: 100%;
+      height: 100%;
+      border: none;
+    }
+  </style>
+</head>
+<body>
+  <iframe id="preview-frame" title="App Preview"></iframe>
+  <script>
+    const iframe = document.getElementById('preview-frame');
+    const port = new URLSearchParams(window.location.search).get('port') || '3000';
+    
+    // Set the iframe src to point to the WebContainer's port
+    // The port will be handled by the service worker proxy from WebContainers
+    iframe.src = `http://localhost:${port}`;
+  </script>
+</body>
+</html>

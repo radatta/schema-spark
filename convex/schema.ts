@@ -14,6 +14,22 @@ export default defineSchema(
       createdAt: v.number(),
     }).index("by_owner", ["ownerId"]),
 
+    envs: defineTable({
+      projectId: v.id("projects"),
+      nodeVersion: v.string(), // e.g., "18"
+      startCommand: v.string(), // default "npm run dev"
+      createdAt: v.number(),
+    }).index("by_project", ["projectId"]),
+
+    metrics: defineTable({
+      projectId: v.id("projects"),
+      wc_boot_ms: v.number(),
+      wc_ready_ms: v.optional(v.number()),
+      wc_error: v.optional(v.string()),
+      memory_usage_mb: v.optional(v.number()),
+      createdAt: v.number(),
+    }).index("by_project", ["projectId"]),
+
     artifacts: defineTable({
       projectId: v.id("projects"),
       path: v.string(),
