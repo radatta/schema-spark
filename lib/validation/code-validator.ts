@@ -47,7 +47,6 @@ export class ValidationService {
             };
 
         } catch (error) {
-            console.error("Project validation error:", error);
             return {
                 isValid: false,
                 totalErrors: 1,

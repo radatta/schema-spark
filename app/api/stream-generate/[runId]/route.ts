@@ -37,9 +37,8 @@ export async function POST(
                     path: filePath,
                     content: content,
                 });
-                console.log(`✅ Saved ${filePath} to Convex`);
             } catch (error) {
-                console.error(`❌ Failed to save ${filePath} to Convex:`, error);
+                // Failed to save to Convex
             }
         };
 
@@ -49,20 +48,17 @@ export async function POST(
             async start(controller) {
                 try {
                     // Send immediate connection test
-                    console.log('Stream started, sending initial ping...');
                     const testEvent = `event: connection_test\ndata: ${JSON.stringify({
                         message: 'Stream connected successfully',
                         runId,
                         timestamp: new Date().toISOString()
                     })}\n\n`;
-                    console.log('Sending SSE event:', JSON.stringify(testEvent));
                     controller.enqueue(encoder.encode(testEvent));
 
                     // Small delay to ensure client receives the test
                     await new Promise(resolve => setTimeout(resolve, 100));
 
                     // Phase 1: Planning
-                    console.log('Sending planning start event...');
                     controller.enqueue(encoder.encode(`event: status\ndata: ${JSON.stringify({
                         phase: 'planning',
                         message: 'Analyzing requirements and creating file plan...'
@@ -75,7 +71,6 @@ export async function POST(
                         preferences
                     });
 
-                    console.log('Sending planning complete event...');
                     controller.enqueue(encoder.encode(`event: plan_complete\ndata: ${JSON.stringify({
                         type: 'plan_complete',
                         data: {
@@ -98,8 +93,6 @@ export async function POST(
                         specification,
                         plan: filePlan,
                         onProgress: (progress: any) => {
-                            console.log('Sending progress event:', progress.type, progress.message);
-
                             // Map progress types to SSE event types
                             let eventType = 'status';
                             let eventData = progress;
@@ -107,23 +100,36 @@ export async function POST(
                             if (progress.type === 'file_generated') {
                                 if (progress.message.includes('Generating')) {
                                     eventType = 'file_start';
-                                    eventData = { filePath: progress.data.filePath };
+                                    eventData = {
+                                        filePath: progress.data.filePath,
+                                        progress: progress.progress // Include progress data
+                                    };
                                 } else if (progress.message.includes('Generated')) {
                                     eventType = 'file_complete';
                                     eventData = {
                                         filePath: progress.data.filePath,
-                                        content: progress.data.content
+                                        content: progress.data.content,
+                                        progress: progress.progress // Include progress data
                                     };
 
                                     // Save completed file to Convex (fire and forget)
-                                    saveFileToConvex(progress.data.filePath, progress.data.content).catch(err =>
-                                        console.error('Failed to save file to Convex:', err)
-                                    );
+                                    saveFileToConvex(progress.data.filePath, progress.data.content).catch(_err => {
+                                        // Failed to save file to Convex
+                                    });
                                 }
+                            } else if (progress.type === 'file_chunk') {
+                                eventType = 'file_chunk';
+                                eventData = {
+                                    filePath: progress.data.filePath,
+                                    chunk: progress.data.chunk,
+                                    accumulated: progress.data.accumulated,
+                                    progress: progress.progress // Include progress data
+                                };
                             } else {
                                 eventData = {
                                     phase: progress.type.replace('_', ''),
-                                    message: progress.message
+                                    message: progress.message,
+                                    progress: progress.progress // Include progress data
                                 };
                             }
 
@@ -132,10 +138,8 @@ export async function POST(
                     };
 
                     const generatedFiles = await orchestrator.generateFiles(generationContext);
-                    console.log(`Orchestrator completed. Generated ${generatedFiles.length} files`);
 
                     // Phase 3: Validation
-                    console.log('Starting validation phase...');
                     controller.enqueue(encoder.encode(`event: status\ndata: ${JSON.stringify({
                         phase: 'validating',
                         message: 'Validating generated code...'
@@ -143,16 +147,13 @@ export async function POST(
 
                     const validator = new ValidationService();
                     const _validationResults = await validator.validateProject(generatedFiles);
-                    console.log('Validation completed');
 
                     // Phase 4: Assembly
-                    console.log('Starting assembly phase...');
                     const fileManager = new FileManager();
                     const _projectStructure = await fileManager.createProjectStructure(
                         generatedFiles,
                         filePlan.architecture
                     );
-                    console.log('Assembly completed');
 
                     // Mark run as completed in Convex
                     try {
@@ -160,20 +161,16 @@ export async function POST(
                             id: runId as Id<"runs">,
                             status: "completed"
                         });
-                        console.log('✅ Run marked as completed in Convex');
                     } catch (error) {
-                        console.error('❌ Failed to update run status:', error);
+                        // Failed to update run status
                     }
 
                     // Final completion
-                    console.log('Generation process completed successfully');
                     controller.enqueue(encoder.encode(`event: complete\ndata: ${JSON.stringify({
                         message: 'Next.js application generated successfully!'
                     })}\n\n`));
 
                 } catch (error) {
-                    console.error('Generation process failed:', error);
-
                     // Mark run as failed in Convex
                     try {
                         await convex.mutation(api.runs.update, {
@@ -181,16 +178,14 @@ export async function POST(
                             status: "failed",
                             error: error instanceof Error ? error.message : 'Unknown error'
                         });
-                        console.log('✅ Run marked as failed in Convex');
                     } catch (updateError) {
-                        console.error('❌ Failed to update run status:', updateError);
+                        // Failed to update run status
                     }
 
                     controller.enqueue(encoder.encode(`event: error\ndata: ${JSON.stringify({
                         message: error instanceof Error ? error.message : 'Unknown error'
                     })}\n\n`));
                 } finally {
-                    console.log('Closing stream...');
                     controller.close();
                 }
             }

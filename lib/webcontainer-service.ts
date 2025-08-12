@@ -40,7 +40,6 @@ export async function getWebContainerInstance(): Promise<WebContainer | null> {
         webcontainerInstance = await bootPromise;
         return webcontainerInstance;
     } catch (error) {
-        console.error("Failed to boot WebContainer:", error);
         bootPromise = null;
         return null;
     }

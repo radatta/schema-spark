@@ -65,19 +65,12 @@ function ProjectContent({ id }: { id: string }) {
 
       // Check if there's an in-progress run and track it
       if (["planning", "generating", "validating"].includes(latestRun.status)) {
-        console.log(
-          "Found in-progress run:",
-          latestRun._id,
-          "with status:",
-          latestRun.status
-        );
         setCurrentRunId(latestRun._id);
       } else if (
         latestRun.status === "completed" &&
         Date.now() - latestRun.createdAt < 10000
       ) {
         // If a run completed in the last 10 seconds, still show its status
-        console.log("Found recently completed run:", latestRun._id);
         setCurrentRunId(latestRun._id);
       }
     }
@@ -88,14 +81,6 @@ function ProjectContent({ id }: { id: string }) {
     if (currentRunId && !streaming.isStreaming && runs) {
       const currentRun = runs.find((run) => run._id === currentRunId);
 
-      console.log("Auto-start check:", {
-        currentRunId,
-        isStreaming: streaming.isStreaming,
-        isComplete: streaming.isComplete,
-        currentRunStatus: currentRun?.status,
-        allRunStatuses: runs.map(r => ({ id: r._id, status: r.status }))
-      });
-
       // Only start streaming for truly in-progress runs, not completed ones
       // Also check if streaming is already complete to avoid restarting
       if (
@@ -103,22 +88,25 @@ function ProjectContent({ id }: { id: string }) {
         ["planning", "generating", "validating"].includes(currentRun.status) &&
         !streaming.isComplete
       ) {
-        console.log("Auto-starting streaming for run:", currentRunId);
-
         // Start streaming generation with a default spec (the actual spec is handled server-side)
         streaming
           .startGeneration(
             projectId,
             "", // Empty spec since API gets it from the run
-            "gpt-4-turbo"
+            "gpt-3.5-turbo"
           )
           .catch((err) => {
-            console.error("Auto-streaming generation failed:", err);
             setError(err instanceof Error ? err.message : "Generation failed");
           });
       }
     }
-  }, [currentRunId, streaming.isStreaming, streaming.isComplete, runs, projectId]);
+  }, [
+    currentRunId,
+    streaming.isStreaming,
+    streaming.isComplete,
+    runs,
+    projectId,
+  ]);
 
   if (project === undefined || artifacts === undefined || runs === undefined) {
     return (
@@ -143,15 +131,13 @@ function ProjectContent({ id }: { id: string }) {
 
     try {
       // Create a new run first
-      console.log("Creating new run for project:", projectId);
       const runId = await createRun({
         projectId,
-        model: "gpt-4-turbo",
+        model: "gpt-3.5-turbo",
         promptVersion: "v1",
         inputSpec: "Todo app with title and done fields", // For regeneration, use a default or get from user
       });
 
-      console.log("Created run:", runId);
       setCurrentRunId(runId);
 
       // The auto-start useEffect will handle starting the streaming
@@ -160,7 +146,6 @@ function ProjectContent({ id }: { id: string }) {
         err instanceof Error
           ? err.message
           : "An error occurred. Please try again.";
-      console.error("Error during regeneration:", errorMessage);
       setError(errorMessage);
     }
   };
@@ -221,6 +206,26 @@ function ProjectContent({ id }: { id: string }) {
               }`}
             ></div>
           </div>
+
+          {/* Progress Bar */}
+          {streaming.progress && !streaming.isReconnecting && (
+            <div className="mt-3">
+              <div className="flex justify-between text-xs text-blue-600 mb-1">
+                <span>
+                  Files: {streaming.progress.current} /{" "}
+                  {streaming.progress.total}
+                </span>
+                <span>{streaming.progress.percentage}%</span>
+              </div>
+              <div className="w-full bg-blue-200 rounded-full h-2">
+                <div
+                  className="bg-blue-600 h-2 rounded-full transition-all duration-300 ease-out"
+                  style={{ width: `${streaming.progress.percentage}%` }}
+                ></div>
+              </div>
+            </div>
+          )}
+
           {streaming.planContent && (
             <div className="mt-2 text-sm">
               <details className="cursor-pointer">

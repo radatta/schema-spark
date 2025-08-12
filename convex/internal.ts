@@ -4,5 +4,3 @@
 export * as projects from "./projects";
 export * as artifacts from "./artifacts";
 export * as runs from "./runs";
-export * as agent from "./agent";
-export * as evals from "./evals";

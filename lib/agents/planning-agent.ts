@@ -1,4 +1,5 @@
-import OpenAI from "openai";
+import { google } from "@ai-sdk/google";
+import { generateText } from "ai";
 import {
     FilePlan,
     FilePlanSchema,
@@ -8,21 +9,19 @@ import {
 } from "@/lib/types/generation-types";
 
 export class PlanningAgent {
-    private openai: OpenAI;
+    private model = google("gemini-2.5-flash");
 
     constructor() {
-        this.openai = new OpenAI({
-            apiKey: process.env.OPENAI_API_KEY,
-        });
+        // Vercel AI SDK automatically uses GOOGLE_GENERATIVE_AI_API_KEY environment variable
     }
 
     async createPlan(context: PlanningContext): Promise<FilePlan> {
         try {
             const { specification, projectType, preferences } = context;
 
-            // Generate the initial plan using OpenAI with Zod validation
-            const completion = await this.openai.chat.completions.create({
-                model: "gpt-4-turbo",
+            // Generate the initial plan using Gemini with Zod validation
+            const { text } = await generateText({
+                model: this.model,
                 messages: [
                     {
                         role: "system",
@@ -35,22 +34,24 @@ export class PlanningAgent {
                 ]
             });
 
-            const response = completion.choices[0].message.content;
-            if (!response) {
-                throw new Error("No response from OpenAI");
+            // Clean the response to handle markdown code blocks
+            let cleanedResponse = text.trim();
+
+            // Remove markdown code block markers if present
+            if (cleanedResponse.startsWith('```json')) {
+                cleanedResponse = cleanedResponse.replace(/^```json\s*/, '').replace(/\s*```$/, '');
+            } else if (cleanedResponse.startsWith('```')) {
+                cleanedResponse = cleanedResponse.replace(/^```\s*/, '').replace(/\s*```$/, '');
             }
 
-            console.log("Received plan response:", response);
-
             // Parse and validate the response using Zod
-            const planData = JSON.parse(response);
+            const planData = JSON.parse(cleanedResponse);
             const validatedPlan = FilePlanSchema.parse(planData);            // Post-process the plan to ensure dependencies are correctly ordered
             const optimizedPlan = this.optimizePlan(validatedPlan);
 
             return optimizedPlan;
 
         } catch (error) {
-            console.error("Planning error:", error);
             throw new Error(`Failed to create plan: ${error instanceof Error ? error.message : 'Unknown error'}`);
         }
     }

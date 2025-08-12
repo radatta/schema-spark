@@ -1,66 +1,32 @@
-import OpenAI from "openai";
+import type { CoreMessage } from "ai";
 import {
     AgentRequest,
-    GeneratedFile,
-    FileGenerationSchema
+    GeneratedFile
 } from "@/lib/types/generation-types";
+import { BaseStreamingAgent } from "./base-streaming-agent";
 
-export class UtilityAgent {
-    private openai: OpenAI;
+export class UtilityAgent extends BaseStreamingAgent {
 
     constructor() {
-        this.openai = new OpenAI({
-            apiKey: process.env.OPENAI_API_KEY,
-        });
+        super();
     }
 
-    async generateFile(request: AgentRequest): Promise<GeneratedFile> {
+    protected async buildMessages(request: AgentRequest): Promise<CoreMessage[]> {
         const { fileSpec, previousFiles, context } = request;
 
-        try {
-            // Build context from previous files
-            const contextualInfo = this.buildContext(previousFiles, fileSpec);
+        // Build context from previous files
+        const contextualInfo = this.buildContext(previousFiles, fileSpec);
 
-            const completion = await this.openai.chat.completions.create({
-                model: "gpt-4-turbo",
-                messages: [
-                    {
-                        role: "system",
-                        content: this.getSystemPrompt(fileSpec.type)
-                    },
-                    {
-                        role: "user",
-                        content: this.getUserPrompt(fileSpec, context, contextualInfo)
-                    }
-                ]
-            });
-
-            const response = completion.choices[0].message.content;
-            if (!response) {
-                throw new Error("No response from OpenAI");
+        return [
+            {
+                role: "system",
+                content: this.getSystemPrompt(fileSpec.type)
+            },
+            {
+                role: "user",
+                content: this.getUserPrompt(fileSpec, context, contextualInfo)
             }
-
-            console.log("Utility Agent OpenAI Response:", response);
-
-            const generationData = JSON.parse(response);
-            const validatedGeneration = FileGenerationSchema.parse(generationData);
-
-            return {
-                path: fileSpec.path,
-                content: validatedGeneration.content,
-                type: fileSpec.type,
-                imports: validatedGeneration.imports,
-                exports: validatedGeneration.exports,
-                metadata: {
-                    hasAsyncOperations: validatedGeneration.metadata?.hasAsyncOperations,
-                    isClientComponent: validatedGeneration.metadata?.isClientComponent
-                }
-            };
-
-        } catch (error) {
-            console.error(`Utility generation error for ${fileSpec.path}:`, error);
-            throw new Error(`Failed to generate utility: ${error instanceof Error ? error.message : 'Unknown error'}`);
-        }
+        ];
     }
 
     private buildContext(previousFiles: GeneratedFile[], fileSpec: any): string {
@@ -237,7 +203,7 @@ Return your response as valid JSON in this exact format:
   "errors": []
 }
 
-Return ONLY valid JSON. The content should be properly escaped Markdown.`;
+IMPORTANT: Return ONLY valid JSON. Ensure all newlines, tabs, and quotes in the content are properly escaped within the JSON string. Do not wrap the JSON in markdown code blocks.`;
 
             default:
                 return basePrompt;
@@ -290,7 +256,7 @@ Return your response as valid JSON in this exact format:
   "errors": []
 }
 
-Return ONLY valid JSON with properly escaped Markdown content.`;
+IMPORTANT: Return ONLY valid JSON. Ensure all newlines, tabs, and quotes in the content are properly escaped within the JSON string. Do not wrap the JSON in markdown code blocks.`;
         }
 
         // Original logic for other file types
@@ -336,6 +302,6 @@ Return your response as valid JSON in this exact format:
   "errors": []
 }
 
-Return ONLY valid JSON that matches this structure. The ${fileSpec.type} should be robust, efficient, and follow best practices.`;
+IMPORTANT: Return ONLY valid JSON. Ensure all newlines, tabs, and quotes in the content are properly escaped within the JSON string. Do not wrap the JSON in markdown code blocks.`;
     }
 }

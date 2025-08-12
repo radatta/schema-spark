@@ -26,82 +26,131 @@ export class GenerationOrchestrator {
     }
 
     async generateFiles(context: GenerationContext): Promise<GeneratedFile[]> {
-        const { plan, onProgress } = context;
-        const generatedFiles: GeneratedFile[] = [];
-        const totalFiles = plan.files.length;
+        const { plan } = context;
 
         try {
-            // Process files in the order specified by the plan
-            for (let i = 0; i < plan.generationOrder.length; i++) {
-                const filePath = plan.generationOrder[i];
-                const fileSpec = plan.files.find(f => f.path === filePath);
+            // Use smart batching for better performance while respecting dependencies
+            return await this.generateWithSmartBatching(plan.files, context);
 
-                if (!fileSpec) {
-                    console.warn(`File spec not found for path: ${filePath}`);
-                    continue;
+        } catch (error) {
+            throw new Error(`Failed to generate files: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        }
+    }
+
+    /**
+     * Generate files using smart batching that respects dependencies
+     */
+    private async generateWithSmartBatching(
+        fileSpecs: FileSpec[],
+        context: GenerationContext
+    ): Promise<GeneratedFile[]> {
+        const generatedFiles: GeneratedFile[] = [];
+        const remaining = [...fileSpecs];
+        const inProgress = new Set<string>();
+        const batchSize = 3; // Process 3 files concurrently max
+
+        while (remaining.length > 0 || inProgress.size > 0) {
+            // Find files that can be generated now (no unmet dependencies)
+            const ready = remaining.filter(spec =>
+                spec.dependencies.every(dep =>
+                    generatedFiles.some(generated => generated.path === dep)
+                )
+            );
+
+            // Limit concurrent generation
+            const available = batchSize - inProgress.size;
+            const toGenerate = ready.slice(0, available);
+
+            // Remove ready files from remaining
+            toGenerate.forEach(spec => {
+                const index = remaining.indexOf(spec);
+                if (index > -1) {
+                    remaining.splice(index, 1);
+                    inProgress.add(spec.path);
                 }
+            });
 
-                // Update progress
-                onProgress({
-                    type: 'file_generated',
-                    runId: context.runId,
-                    message: `Generating ${fileSpec.path}...`,
-                    data: { filePath: fileSpec.path, type: fileSpec.type },
-                    progress: {
-                        current: i + 1,
-                        total: totalFiles,
-                        percentage: Math.round(((i + 1) / totalFiles) * 100)
-                    }
-                });
-
+            // Generate batch concurrently
+            const batchPromises = toGenerate.map(async (fileSpec) => {
                 try {
-                    console.log(`Starting generation for: ${fileSpec.path} (${fileSpec.type})`);
-                    const generatedFile = await this.generateFile(fileSpec, generatedFiles, context);
-                    if (generatedFile) {
-                        console.log(`Successfully generated: ${fileSpec.path}`);
-                        generatedFiles.push(generatedFile);
+                    // Update progress
+                    if (context.onProgress) {
+                        context.onProgress({
+                            type: 'file_generated',
+                            runId: context.runId,
+                            message: `Generating ${fileSpec.path}...`,
+                            data: { filePath: fileSpec.path, type: fileSpec.type },
+                            progress: {
+                                current: generatedFiles.length + inProgress.size,
+                                total: fileSpecs.length,
+                                percentage: Math.round(((generatedFiles.length + inProgress.size) / fileSpecs.length) * 100)
+                            }
+                        });
+                    }
 
+                    const result = await this.generateFile(fileSpec, generatedFiles, context);
+                    inProgress.delete(fileSpec.path);
+
+                    if (result && context.onProgress) {
                         // Send file completion progress
-                        onProgress({
+                        context.onProgress({
                             type: 'file_generated',
                             runId: context.runId,
                             message: `Generated ${fileSpec.path}`,
                             data: {
                                 filePath: fileSpec.path,
                                 type: fileSpec.type,
-                                content: generatedFile.content,
-                                size: generatedFile.content.length
+                                content: result.content,
+                                size: result.content.length
                             },
                             progress: {
-                                current: i + 1,
-                                total: totalFiles,
-                                percentage: Math.round(((i + 1) / totalFiles) * 100)
+                                current: generatedFiles.length + 1,
+                                total: fileSpecs.length,
+                                percentage: Math.round(((generatedFiles.length + 1) / fileSpecs.length) * 100)
                             }
                         });
-                    } else {
-                        console.log(`No file generated for: ${fileSpec.path}`);
                     }
-                } catch (fileError) {
-                    console.error(`Error generating ${fileSpec.path}:`, fileError);
-                    onProgress({
-                        type: 'error',
-                        runId: context.runId,
-                        message: `Failed to generate ${fileSpec.path}: ${fileError instanceof Error ? fileError.message : 'Unknown error'}`,
-                        data: { filePath: fileSpec.path, error: fileError }
-                    });
 
-                    // Continue with other files even if one fails
-                    continue;
+                    return result;
+                } catch (error) {
+                    inProgress.delete(fileSpec.path);
+                    if (context.onProgress) {
+                        context.onProgress({
+                            type: 'error',
+                            runId: context.runId,
+                            message: `Failed to generate ${fileSpec.path}: ${error instanceof Error ? error.message : 'Unknown error'}`,
+                            data: { filePath: fileSpec.path, error }
+                        });
+                    }
+                    return null;
                 }
+            });
+
+            // Wait for batch to complete
+            if (batchPromises.length > 0) {
+                const batchResults = await Promise.all(batchPromises);
+
+                // Add successful generations
+                batchResults.forEach(result => {
+                    if (result) {
+                        generatedFiles.push(result);
+                    }
+                });
             }
 
-            console.log(`Generation complete! Generated ${generatedFiles.length} files out of ${totalFiles} requested`);
-            return generatedFiles;
+            // If no progress is possible, break to avoid infinite loop
+            if (toGenerate.length === 0 && inProgress.size === 0 && remaining.length > 0) {
+                // This shouldn't happen with proper dependency ordering, but safety check
+                throw new Error(`Circular dependency detected or invalid dependency order`);
+            }
 
-        } catch (error) {
-            console.error("Generation orchestration error:", error);
-            throw new Error(`Failed to generate files: ${error instanceof Error ? error.message : 'Unknown error'}`);
+            // Small delay to prevent tight loop if waiting for dependencies
+            if (toGenerate.length === 0 && inProgress.size > 0) {
+                await new Promise(resolve => setTimeout(resolve, 100));
+            }
         }
+
+        return generatedFiles;
     }
 
     private async generateFile(
@@ -118,62 +167,72 @@ export class GenerationOrchestrator {
             )
         };
 
-        try {
-            console.log(`Routing to agent for file type: ${fileSpec.type}`);
-            // Route to appropriate agent based on file type
-            switch (fileSpec.type) {
-                case 'component':
-                case 'layout':
-                    console.log(`Using ComponentAgent for: ${fileSpec.path}`);
-                    return await this.componentAgent.generateFile(agentRequest);
-
-                case 'page':
-                    console.log(`Using PageAgent for: ${fileSpec.path}`);
-                    return await this.pageAgent.generateFile(agentRequest);
-
-                case 'api':
-                case 'api route':
-                    console.log(`Using APIAgent for: ${fileSpec.path}`);
-                    return await this.apiAgent.generateFile(agentRequest);
-
-                case 'utility':
-                case 'hook':
-                case 'hooks':
-                case 'type':
-                case 'types':
-                    console.log(`Using UtilityAgent for: ${fileSpec.path}`);
-                    return await this.utilityAgent.generateFile(agentRequest);
-
-                case 'config':
-                case 'style':
-                case 'styles':
-                case 'static':
-                    console.log(`Using ConfigAgent for: ${fileSpec.path}`);
-                    return await this.configAgent.generateFile(agentRequest);
-
-                case 'documentation':
-                    console.log(`Using UtilityAgent for documentation: ${fileSpec.path}`);
-                    return await this.utilityAgent.generateFile(agentRequest);
-
-                case 'middleware':
-                case 'loading':
-                case 'error':
-                case 'not-found':
-                case 'global-error':
-                case 'route':
-                case 'template':
-                case 'default':
-                    console.log(`Using UtilityAgent (fallback) for: ${fileSpec.path}`);
-                    // These special Next.js files can be handled by utility agent for now
-                    return await this.utilityAgent.generateFile(agentRequest);
-
-                default:
-                    console.warn(`Unknown file type: ${fileSpec.type as string}, using UtilityAgent`);
-                    return await this.utilityAgent.generateFile(agentRequest);
+        // Set up streaming callbacks
+        const streamingCallbacks = {
+            onChunk: (chunk: string, accumulated: string) => {
+                if (context.onProgress) {
+                    context.onProgress({
+                        type: 'file_chunk',
+                        runId: context.runId,
+                        message: `Generating ${fileSpec.path}...`,
+                        data: {
+                            filePath: fileSpec.path,
+                            chunk: chunk,
+                            accumulated: accumulated
+                        }
+                    });
+                }
+            },
+            onComplete: (_content: string) => {
+                // Streaming completed
+            },
+            onError: (_error: Error) => {
+                // Handle streaming error
             }
-        } catch (error) {
-            console.error(`Agent failed to generate ${fileSpec.path}:`, error);
-            throw error;
+        };
+
+        // Route to appropriate agent based on file type
+        switch (fileSpec.type) {
+            case 'component':
+            case 'layout':
+                return await this.componentAgent.generateFile(agentRequest, streamingCallbacks);
+
+            case 'page':
+                return await this.pageAgent.generateFile(agentRequest, streamingCallbacks);
+
+            case 'api':
+            case 'api route':
+                return await this.apiAgent.generateFile(agentRequest, streamingCallbacks);
+
+            case 'utility':
+            case 'hook':
+            case 'hooks':
+            case 'type':
+            case 'types':
+                return await this.utilityAgent.generateFile(agentRequest, streamingCallbacks);
+
+            case 'config':
+            case 'style':
+            case 'styles':
+            case 'static':
+                return await this.configAgent.generateFile(agentRequest, streamingCallbacks);
+
+            case 'documentation':
+                return await this.utilityAgent.generateFile(agentRequest, streamingCallbacks);
+
+            case 'middleware':
+            case 'loading':
+            case 'error':
+            case 'not-found':
+            case 'global-error':
+            case 'route':
+            case 'template':
+            case 'default':
+                // These special Next.js files can be handled by utility agent for now
+                return await this.utilityAgent.generateFile(agentRequest, streamingCallbacks);
+
+            default:
+                return await this.utilityAgent.generateFile(agentRequest, streamingCallbacks);
         }
     }
 
@@ -220,13 +279,11 @@ export class GenerationOrchestrator {
         // Process files in batches for better performance
         for (let i = 0; i < fileSpecs.length; i += batchSize) {
             const batch = fileSpecs.slice(i, i + batchSize);
-            console.log(`Processing batch ${Math.floor(i / batchSize) + 1} of ${Math.ceil(fileSpecs.length / batchSize)}`);
 
             const batchPromises = batch.map(async (fileSpec) => {
                 try {
                     return await this.generateFile(fileSpec, results, context);
                 } catch (error) {
-                    console.error(`Batch generation error for ${fileSpec.path}:`, error);
                     return null;
                 }
             });
@@ -252,8 +309,6 @@ export class GenerationOrchestrator {
                 }
             });
         }
-
-        console.log(`Batch processing complete! Generated ${results.length} files`);
 
         return results;
     }

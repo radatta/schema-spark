@@ -1,73 +1,35 @@
-import OpenAI from "openai";
+import type { CoreMessage } from "ai";
 import {
     AgentRequest,
-    GeneratedFile,
-    FileGenerationSchema
+    GeneratedFile
 } from "@/lib/types/generation-types";
+import { BaseStreamingAgent } from "./base-streaming-agent";
 
-export class ComponentAgent {
-    private openai: OpenAI;
+export class ComponentAgent extends BaseStreamingAgent {
 
     constructor() {
-        this.openai = new OpenAI({
-            apiKey: process.env.OPENAI_API_KEY,
-        });
+        super();
     }
 
-    async generateFile(request: AgentRequest): Promise<GeneratedFile> {
+    protected async buildMessages(request: AgentRequest): Promise<CoreMessage[]> {
         const { fileSpec, previousFiles, context } = request;
 
-        try {
-            console.log("Component Agent - context:", context);
-            console.log("Component Agent - specification:", context?.specification);
+        // Determine if this should be a client component
+        const needsClientComponent = this.requiresClientComponent(fileSpec, context.specification);
 
-            // Determine if this should be a client component
-            const needsClientComponent = this.requiresClientComponent(fileSpec, context.specification);
+        // Build context from previous files
+        const contextualInfo = this.buildContext(previousFiles, fileSpec);
 
-            // Build context from previous files
-            const contextualInfo = this.buildContext(previousFiles, fileSpec);
-
-            const completion = await this.openai.chat.completions.create({
-                model: "gpt-4-turbo",
-                messages: [
-                    {
-                        role: "system",
-                        content: this.getSystemPrompt(needsClientComponent)
-                    },
-                    {
-                        role: "user",
-                        content: this.getUserPrompt(fileSpec, context, contextualInfo)
-                    }
-                ]
-            });
-
-            const response = completion.choices[0].message.content;
-            if (!response) {
-                throw new Error("No response from OpenAI");
+        return [
+            {
+                role: "system",
+                content: this.getSystemPrompt(needsClientComponent)
+            },
+            {
+                role: "user",
+                content: this.getUserPrompt(fileSpec, context, contextualInfo)
             }
-
-            console.log("Component Agent OpenAI Response:", response);
-
-            const generationData = JSON.parse(response);
-            const validatedGeneration = FileGenerationSchema.parse(generationData);
-
-            return {
-                path: fileSpec.path,
-                content: validatedGeneration.content,
-                type: fileSpec.type,
-                imports: validatedGeneration.imports,
-                exports: validatedGeneration.exports,
-                metadata: {
-                    isClientComponent: validatedGeneration.metadata?.isClientComponent,
-                    hasAsyncOperations: validatedGeneration.metadata?.hasAsyncOperations,
-                    stateVariables: validatedGeneration.metadata?.stateVariables
-                }
-            };
-
-        } catch (error) {
-            console.error(`Component generation error for ${fileSpec.path}:`, error);
-            throw new Error(`Failed to generate component: ${error instanceof Error ? error.message : 'Unknown error'}`);
-        }
+        ];
     }
 
     private requiresClientComponent(fileSpec: any, specification: string): boolean {
@@ -190,7 +152,7 @@ Requirements:
 
 Return your response as valid JSON in this exact format:
 {
-  "content": "// Complete component code here",
+  "content": "// Complete component code here - ensure newlines are properly escaped as \\n",
   "imports": ["react", "next/link"],
   "exports": ["ComponentName"],
   "dependencies": ["@/components/ui/button"],
@@ -209,6 +171,6 @@ Return your response as valid JSON in this exact format:
   "errors": []
 }
 
-Return ONLY valid JSON that matches this structure. The component should be production-ready and follow modern React patterns.`;
+IMPORTANT: Return ONLY valid JSON. Ensure all newlines, tabs, and quotes in the component code are properly escaped within the JSON string. Do not wrap the JSON in markdown code blocks.`;
     }
 }

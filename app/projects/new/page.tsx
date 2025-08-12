@@ -91,17 +91,14 @@ function NewProjectForm() {
     try {
       // Create the project
       const newProjectId = await createProject({ name: name.trim() });
-      console.log("Project created with ID:", newProjectId);
 
       // Create a run for the generation
       const runId = await createRun({
         projectId: newProjectId,
-        model: "gpt-4-turbo",
+        model: "gpt-3.5-turbo",
         promptVersion: "v1",
         inputSpec: spec.trim(), // Pass the spec to the run
       });
-
-      console.log("Run created with ID:", runId);
 
       // Redirect immediately to the project page
       router.push(`/projects/${newProjectId}`);
@@ -110,7 +107,6 @@ function NewProjectForm() {
         err instanceof Error
           ? err.message
           : "An error occurred. Please try again.";
-      console.error("Error during project creation:", errorMessage);
       setError(errorMessage);
       setIsSubmitting(false);
     }

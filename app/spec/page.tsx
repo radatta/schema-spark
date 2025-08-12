@@ -22,7 +22,7 @@ export default function SpecPage() {
         setSpec(text);
       })
       .catch((error) => {
-        console.error("Error loading spec:", error);
+        // Error loading spec
       });
   }, []);
 

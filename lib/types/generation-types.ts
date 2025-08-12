@@ -216,7 +216,7 @@ export interface CodeMetrics {
 
 // Progress tracking types
 export interface ProgressEvent {
-    type: 'planning_start' | 'planning_complete' | 'generation_start' | 'file_generated' |
+    type: 'planning_start' | 'planning_complete' | 'generation_start' | 'file_generated' | 'file_chunk' |
     'validation_start' | 'validation_complete' | 'generation_complete' | 'error';
     runId: string;
     message: string;

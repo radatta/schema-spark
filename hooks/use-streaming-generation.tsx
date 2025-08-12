@@ -11,7 +11,17 @@ export type StreamEvent =
   | { type: "status"; data: { phase: string; message: string } }
   | { type: "plan_chunk"; data: { content: string; accumulated: string } }
   | { type: "plan_complete"; data: { content: string } }
-  | { type: "file_start"; data: { filePath: string } }
+  | {
+      type: "file_start";
+      data: {
+        filePath: string;
+        progress?: {
+          current: number;
+          total: number;
+          percentage: number;
+        };
+      };
+    }
   | {
       type: "file_chunk";
       data: {
@@ -19,9 +29,25 @@ export type StreamEvent =
         content: string;
         accumulated: string;
         isStreaming?: boolean;
+        progress?: {
+          current: number;
+          total: number;
+          percentage: number;
+        };
       };
     }
-  | { type: "file_complete"; data: { filePath: string; content: string } }
+  | {
+      type: "file_complete";
+      data: {
+        filePath: string;
+        content: string;
+        progress?: {
+          current: number;
+          total: number;
+          percentage: number;
+        };
+      };
+    }
   | { type: "complete"; data: { message: string } }
   | { type: "error"; data: { message: string } };
 
@@ -37,6 +63,11 @@ export interface StreamingState {
   isComplete: boolean;
   retryCount: number;
   isReconnecting: boolean;
+  progress: {
+    current: number;
+    total: number;
+    percentage: number;
+  } | null;
 }
 
 export function useStreamingGeneration(runId: Id<"runs"> | null) {
@@ -54,6 +85,7 @@ export function useStreamingGeneration(runId: Id<"runs"> | null) {
     isComplete: false,
     retryCount: 0,
     isReconnecting: false,
+    progress: null,
   });
 
   const eventSourceRef = useRef<EventSource | null>(null);
@@ -105,7 +137,6 @@ export function useStreamingGeneration(runId: Id<"runs"> | null) {
 
     // Prevent multiple simultaneous streaming calls
     if (state.isStreaming) {
-      console.log("Streaming already in progress, skipping duplicate call");
       return;
     }
 
@@ -141,7 +172,7 @@ export function useStreamingGeneration(runId: Id<"runs"> | null) {
         body: JSON.stringify({
           projectId,
           inputSpec,
-          model: model || "gpt-4-turbo",
+          model: model || "gpt-3.5-turbo",
           authToken,
         }),
       });
@@ -154,8 +185,6 @@ export function useStreamingGeneration(runId: Id<"runs"> | null) {
         throw new Error("No response body");
       }
 
-      console.log("Starting to read response stream...");
-
       // Create EventSource-like interface for Server-Sent Events
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
@@ -166,7 +195,6 @@ export function useStreamingGeneration(runId: Id<"runs"> | null) {
         if (done) break;
 
         const chunk = decoder.decode(value, { stream: true });
-        console.log("Received SSE chunk:", JSON.stringify(chunk));
 
         // Add chunk to buffer
         buffer += chunk;
@@ -181,24 +209,15 @@ export function useStreamingGeneration(runId: Id<"runs"> | null) {
         for (const message of messages) {
           if (!message.trim()) continue;
 
-          console.log(
-            "Processing complete SSE message:",
-            JSON.stringify(message)
-          );
-
           const lines = message.split("\n");
           let eventType = "";
           let eventData = "";
 
           for (const line of lines) {
-            console.log("Processing message line:", JSON.stringify(line));
-
             if (line.startsWith("event: ")) {
               eventType = line.slice(7).trim();
-              console.log("Found event type:", eventType);
             } else if (line.startsWith("data: ")) {
               eventData = line.slice(6);
-              console.log("Found event data:", eventData);
             }
           }
 
@@ -206,31 +225,14 @@ export function useStreamingGeneration(runId: Id<"runs"> | null) {
           if (eventType && eventData) {
             try {
               const parsedData = JSON.parse(eventData);
-              console.log("Parsed SSE event:", {
-                type: eventType,
-                data: parsedData,
-              });
               handleStreamEvent({ type: eventType as any, data: parsedData });
             } catch (e) {
-              console.error(
-                "Failed to parse SSE event data:",
-                e,
-                "Data:",
-                eventData
-              );
+              // Failed to parse SSE event data
             }
-          } else {
-            console.warn("Incomplete SSE message:", {
-              eventType,
-              eventData,
-              message,
-            });
           }
         }
       }
     } catch (error) {
-      console.error("Streaming error:", error);
-
       // Determine if this is a network error that might be recoverable
       const isNetworkError =
         error instanceof Error &&
@@ -240,9 +242,6 @@ export function useStreamingGeneration(runId: Id<"runs"> | null) {
           error.message.includes("timeout"));
 
       if (isNetworkError && state.retryCount < 3) {
-        console.log(
-          `Network error detected, attempting retry ${state.retryCount + 1}/3`
-        );
         // Don't store the last successful parameters, we'll need to pass them to retry
         setState((prev) => ({
           ...prev,
@@ -263,15 +262,12 @@ export function useStreamingGeneration(runId: Id<"runs"> | null) {
   };
 
   const handleStreamEvent = (event: StreamEvent) => {
-    console.log("Handling stream event:", event.type, event);
-
     switch (event.type) {
       case "connection_test":
-        console.log("✅ SSE connection confirmed:", event.data);
+        // SSE connection confirmed
         break;
 
       case "status":
-        console.log("Processing status event:", event);
         setState((prev) => ({
           ...prev,
           currentPhase: event.data.phase,
@@ -325,6 +321,7 @@ export function useStreamingGeneration(runId: Id<"runs"> | null) {
             ...prev,
             currentFile: event.data.filePath,
             newlyCreatedFiles: newCreatedFiles,
+            progress: event.data.progress || prev.progress,
           };
         });
 
@@ -338,14 +335,18 @@ export function useStreamingGeneration(runId: Id<"runs"> | null) {
         break;
 
       case "file_chunk":
-        setState((prev) => ({
-          ...prev,
-          currentFile: event.data.filePath,
-          files: {
+        setState((prev) => {
+          const updatedFiles = {
             ...prev.files,
             [event.data.filePath]: event.data.accumulated,
-          },
-        }));
+          };
+          return {
+            ...prev,
+            currentFile: event.data.filePath,
+            files: updatedFiles,
+            progress: event.data.progress || prev.progress,
+          };
+        });
         break;
 
       case "file_complete":
@@ -361,6 +362,7 @@ export function useStreamingGeneration(runId: Id<"runs"> | null) {
               [event.data.filePath]: event.data.content,
             },
             newlyCreatedFiles: updatedNewlyCreatedFiles,
+            progress: event.data.progress || prev.progress,
           };
         });
         break;

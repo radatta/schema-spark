@@ -40,7 +40,6 @@ export class FileManager {
             };
 
         } catch (error) {
-            console.error("Project structure creation error:", error);
             throw new Error(`Failed to create project structure: ${error instanceof Error ? error.message : 'Unknown error'}`);
         }
     }

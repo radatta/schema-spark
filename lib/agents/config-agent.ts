@@ -1,70 +1,45 @@
-import OpenAI from "openai";
+import type { CoreMessage } from "ai";
 import {
     AgentRequest,
-    GeneratedFile,
-    FileGenerationSchema
+    GeneratedFile
 } from "@/lib/types/generation-types";
+import { BaseStreamingAgent } from "./base-streaming-agent";
 
-export class ConfigAgent {
-    private openai: OpenAI;
+export class ConfigAgent extends BaseStreamingAgent {
 
     constructor() {
-        this.openai = new OpenAI({
-            apiKey: process.env.OPENAI_API_KEY,
-        });
+        super();
     }
 
-    async generateFile(request: AgentRequest): Promise<GeneratedFile> {
+    // Override the main method to handle special JSON config cases
+    async generateFile(request: AgentRequest, callbacks?: any): Promise<GeneratedFile> {
+        const { fileSpec } = request;
+
+        // Handle different config file types
+        if (this.isJSONConfig(fileSpec.path)) {
+            return await this.generateJSONConfig(fileSpec, request.context);
+        }
+
+        // Use streaming for non-JSON configs
+        return await super.generateFile(request, callbacks);
+    }
+
+    protected async buildMessages(request: AgentRequest): Promise<CoreMessage[]> {
         const { fileSpec, previousFiles, context } = request;
 
-        try {
-            // Handle different config file types
-            if (this.isJSONConfig(fileSpec.path)) {
-                return await this.generateJSONConfig(fileSpec, context);
+        // Build context from previous files
+        const contextualInfo = this.buildContext(previousFiles, fileSpec);
+
+        return [
+            {
+                role: "system",
+                content: this.getSystemPrompt(fileSpec)
+            },
+            {
+                role: "user",
+                content: this.getUserPrompt(fileSpec, context, contextualInfo)
             }
-
-            // Build context from previous files
-            const contextualInfo = this.buildContext(previousFiles, fileSpec);
-
-            const completion = await this.openai.chat.completions.create({
-                model: "gpt-4-turbo",
-                messages: [
-                    {
-                        role: "system",
-                        content: this.getSystemPrompt(fileSpec)
-                    },
-                    {
-                        role: "user",
-                        content: this.getUserPrompt(fileSpec, context, contextualInfo)
-                    }
-                ]
-            });
-
-            const response = completion.choices[0].message.content;
-            if (!response) {
-                throw new Error("No response from OpenAI");
-            }
-
-            console.log("Config Agent OpenAI Response:", response);
-
-            const generationData = JSON.parse(response);
-            const validatedGeneration = FileGenerationSchema.parse(generationData);
-
-            return {
-                path: fileSpec.path,
-                content: validatedGeneration.content,
-                type: fileSpec.type,
-                imports: validatedGeneration.imports,
-                exports: validatedGeneration.exports,
-                metadata: {
-                    hasAsyncOperations: validatedGeneration.metadata?.hasAsyncOperations
-                }
-            };
-
-        } catch (error) {
-            console.error(`Config generation error for ${fileSpec.path}:`, error);
-            throw new Error(`Failed to generate config: ${error instanceof Error ? error.message : 'Unknown error'}`);
-        }
+        ];
     }
 
     private isJSONConfig(path: string): boolean {

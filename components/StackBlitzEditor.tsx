@@ -110,14 +110,11 @@ export function StackBlitzEditor({
               template = "node";
             }
           } catch (e) {
-            console.warn("Failed to parse package.json, using html template");
             template = "html";
           }
         }
 
         if (isCancelled) return;
-
-        console.log("Initializing StackBlitz with files:", files);
 
         // Create the StackBlitz project
         const vm = await sdk.embedProject(
@@ -143,7 +140,6 @@ export function StackBlitzEditor({
         }
       } catch (err) {
         if (!isCancelled) {
-          console.error("Failed to initialize StackBlitz:", err);
           setError(
             err instanceof Error ? err.message : "Failed to load StackBlitz"
           );
@@ -182,15 +178,13 @@ export function StackBlitzEditor({
           filesToUpdate[artifact.path] = artifact.content;
         });
 
-        console.log("Updating StackBlitz files:", Object.keys(filesToUpdate));
-
         // Apply file system diff with proper format
         await vmRef.current!.applyFsDiff({
           create: filesToUpdate,
           destroy: [],
         });
       } catch (err) {
-        console.error("Failed to update StackBlitz files:", err);
+        // Failed to update files
       }
     }
 
@@ -209,53 +203,30 @@ export function StackBlitzEditor({
       artifactFiles[artifact.path] = artifact.content;
     });
 
-    console.log(
-      "Updating StackBlitz with new artifacts:",
-      Object.keys(artifactFiles)
-    );
-
     vmRef.current
       .applyFsDiff({
         create: artifactFiles,
         destroy: [],
       })
       .catch((error) => {
-        console.error("Failed to update artifacts in StackBlitz:", error);
+        // Failed to update artifacts
       });
   }, [artifacts, initialized]);
 
-  // Handle streaming file updates
-  // Add debouncing for file updates to prevent partial file analysis
-  const [debouncedStreamingFiles, setDebouncedStreamingFiles] = useState<
-    Record<string, string>
-  >({});
-
-  useEffect(() => {
-    if (!isGenerating || Object.keys(streamingFiles).length === 0) {
-      setDebouncedStreamingFiles({});
-      return;
-    }
-
-    // Debounce file updates to prevent StackBlitz from analyzing incomplete files
-    const timeoutId = setTimeout(() => {
-      setDebouncedStreamingFiles(streamingFiles);
-    }, 50); // 150ms debounce
-
-    return () => clearTimeout(timeoutId);
-  }, [streamingFiles, isGenerating]);
-
+  // Handle streaming file updates - removed debouncing for immediate updates
   useEffect(() => {
     if (
       !vmRef.current ||
       !isGenerating ||
-      Object.keys(debouncedStreamingFiles).length === 0
+      Object.keys(streamingFiles).length === 0
     ) {
       return;
     }
-    // Apply file updates using applyFsDiff
+
+    // Apply file updates using applyFsDiff immediately
     const filesToUpdate: Record<string, string> = {};
 
-    for (const [filePath, content] of Object.entries(debouncedStreamingFiles)) {
+    for (const [filePath, content] of Object.entries(streamingFiles)) {
       // For streaming, include all files even if they have minimal content
       filesToUpdate[filePath] = content || "";
     }
@@ -275,7 +246,6 @@ export function StackBlitzEditor({
             newlyCreatedFiles.has(currentFile)
           ) {
             try {
-              console.log("Opening newly created file:", currentFile);
               // Small delay to ensure StackBlitz has processed the file creation
               await new Promise((resolve) => setTimeout(resolve, 100));
 
@@ -293,22 +263,17 @@ export function StackBlitzEditor({
                 error.message.includes("Could not find source file")
               ) {
                 // This is expected during rapid streaming - file might not be ready yet
-                console.debug(`File ${currentFile} not ready for focusing yet`);
               } else {
-                // Log other unexpected errors
-                console.warn(
-                  `Unexpected error focusing on ${currentFile}:`,
-                  error
-                );
+                // Log other unexpected errors for debugging if needed
               }
             }
           }
         })
         .catch((error) => {
-          console.error("Failed to update streaming files:", error);
+          // Failed to update streaming files
         });
     }
-  }, [debouncedStreamingFiles, isGenerating, currentFile, newlyCreatedFiles]);
+  }, [streamingFiles, isGenerating, currentFile, newlyCreatedFiles]);
 
   if (error) {
     return (
