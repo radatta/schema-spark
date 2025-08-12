@@ -865,6 +865,49 @@ export default function MainPage() {
                 content: packageJsonContent,
             });
 
+            // Generate tsconfig.json file for TypeScript configuration
+            const tsconfigContent = JSON.stringify({
+                compilerOptions: {
+                    lib: [
+                        "dom",
+                        "dom.iterable",
+                        "esnext"
+                    ],
+                    allowJs: true,
+                    skipLibCheck: true,
+                    strict: false,
+                    noEmit: true,
+                    incremental: true,
+                    module: "esnext",
+                    esModuleInterop: true,
+                    moduleResolution: "node",
+                    resolveJsonModule: true,
+                    isolatedModules: true,
+                    jsx: "preserve",
+                    plugins: [
+                        {
+                            name: "next"
+                        }
+                    ]
+                },
+                include: [
+                    "next-env.d.ts",
+                    ".next/types/**/*.ts",
+                    "**/*.ts",
+                    "**/*.tsx"
+                ],
+                exclude: [
+                    "node_modules"
+                ]
+            }, null, 2);
+
+            // Create the tsconfig.json artifact
+            await ctx.runMutation(api.artifacts.upsert, {
+                projectId,
+                path: "tsconfig.json",
+                content: tsconfigContent,
+            });
+
 
             const genEndTime = Date.now();
             const genDuration = genEndTime - genStartTime;

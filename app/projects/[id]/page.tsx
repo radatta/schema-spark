@@ -19,7 +19,7 @@ import { Id } from "@/convex/_generated/dataModel";
 import { SignInButton } from "@clerk/nextjs";
 import { Header } from "@/components/layout/header";
 import { useRunStatus } from "@/hooks/use-run-status";
-import { CodeHighlight } from "@/components/ui/code-highlight";
+import { StackBlitzEditor } from "@/components/StackBlitzEditor";
 
 export default function ProjectDetail({ params }: { params: { id: string } }) {
   return (
@@ -160,9 +160,6 @@ function ProjectContent({ id }: { id: string }) {
           >
             {isGenerating ? "Regenerating..." : "Regenerate App"}
           </Button>
-          <Button asChild>
-            <Link href={`/preview?projectId=${id}`}>Preview App</Link>
-          </Button>
           <Button variant="outline" asChild>
             <Link href={`/projects/${id}/evals`}>View Evaluations</Link>
           </Button>
@@ -184,50 +181,13 @@ function ProjectContent({ id }: { id: string }) {
         </TabsList>
 
         <TabsContent value="artifacts">
-          <ArtifactsTab artifacts={artifacts} />
+          <StackBlitzEditor artifacts={artifacts} projectName={project.name} />
         </TabsContent>
 
         <TabsContent value="runs">
           <RunsTab runs={runs} />
         </TabsContent>
       </Tabs>
-    </div>
-  );
-}
-
-function ArtifactsTab({ artifacts }: { artifacts: any[] }) {
-  if (!artifacts || artifacts.length === 0) {
-    return (
-      <div className="text-center py-12 bg-gray-50 rounded-lg">
-        <h2 className="text-xl font-medium mb-2">No artifacts yet</h2>
-        <p className="text-gray-500">
-          Run the agent to generate app artifacts.
-        </p>
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-4 text-black">
-      {artifacts.map((artifact) => (
-        <Card key={artifact._id}>
-          <CardHeader>
-            <CardTitle className="flex justify-between items-center">
-              <span className="font-mono text-sm">{artifact.path}</span>
-              <span className="text-xs font-normal bg-gray-100 px-2 py-1 rounded">
-                v{artifact.version}
-              </span>
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <CodeHighlight
-              code={artifact.content}
-              language={artifact.path.split(".").pop() || "ts"}
-              maxHeight="300px"
-            />
-          </CardContent>
-        </Card>
-      ))}
     </div>
   );
 }
