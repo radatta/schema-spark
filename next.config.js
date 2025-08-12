@@ -20,9 +20,9 @@ const nextConfig = {
           {
             key: 'Content-Security-Policy',
             value: [
-              "frame-src 'self' https://stackblitz.com https://*.stackblitz.io",
-              "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://unpkg.com https://*.stackblitz.io https://*.clerk.accounts.dev",
-              "connect-src 'self' https://stackblitz.com https://*.stackblitz.io https://*.clerk.accounts.dev https://*.convex.cloud wss://*.convex.cloud",
+              "frame-src 'self' https://stackblitz.com https://*.stackblitz.io  https://challenges.cloudflare.com",
+              "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://unpkg.com https://*.stackblitz.io https://*.clerk.accounts.dev https://clerk.schema-spark.rahuldatta.dev https://challenges.cloudflare.com",
+              "connect-src 'self' https://stackblitz.com https://*.stackblitz.io https://*.clerk.accounts.dev https://clerk.schema-spark.rahuldatta.dev https://*.convex.cloud wss://*.convex.cloud",
               "worker-src 'self' blob:",
               "img-src 'self' data: https:",
               "style-src 'self' 'unsafe-inline'",
