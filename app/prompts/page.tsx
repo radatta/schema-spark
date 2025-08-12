@@ -3,8 +3,7 @@
 import { useState } from "react";
 import { Header } from "@/components/layout/header";
 import { Button } from "@/components/ui/button";
-import { Separator } from "@/components/ui/separator";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import {
   Table,
   TableBody,
@@ -147,7 +146,7 @@ function PromptsList() {
               </div>
             </div>
             <DialogFooter>
-              <Button onClick={handleCreatePrompt}>Create Prompt</Button>
+              <Button onClick={() => void handleCreatePrompt()}>Create Prompt</Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>

@@ -1,12 +1,11 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import {
   Authenticated,
   Unauthenticated,
   useQuery,
-  useAction,
   useMutation,
 } from "convex/react";
 import { api } from "@/convex/_generated/api";
@@ -19,7 +18,6 @@ import { useState, useEffect } from "react";
 import { Id } from "@/convex/_generated/dataModel";
 import { SignInButton } from "@clerk/nextjs";
 import { Header } from "@/components/layout/header";
-import { useRunStatus } from "@/hooks/use-run-status";
 import { StackBlitzEditor } from "@/components/StackBlitzEditor";
 import { useStreamingGeneration } from "@/hooks/use-streaming-generation";
 
@@ -90,10 +88,20 @@ function ProjectContent({ id }: { id: string }) {
     if (currentRunId && !streaming.isStreaming && runs) {
       const currentRun = runs.find((run) => run._id === currentRunId);
 
+      console.log("Auto-start check:", {
+        currentRunId,
+        isStreaming: streaming.isStreaming,
+        isComplete: streaming.isComplete,
+        currentRunStatus: currentRun?.status,
+        allRunStatuses: runs.map(r => ({ id: r._id, status: r.status }))
+      });
+
       // Only start streaming for truly in-progress runs, not completed ones
+      // Also check if streaming is already complete to avoid restarting
       if (
         currentRun &&
-        ["planning", "generating", "validating"].includes(currentRun.status)
+        ["planning", "generating", "validating"].includes(currentRun.status) &&
+        !streaming.isComplete
       ) {
         console.log("Auto-starting streaming for run:", currentRunId);
 
@@ -110,10 +118,7 @@ function ProjectContent({ id }: { id: string }) {
           });
       }
     }
-  }, [currentRunId, streaming.isStreaming, runs, projectId]);
-
-  // Use the run status hook to show toast notifications
-  useRunStatus(currentRunId || undefined);
+  }, [currentRunId, streaming.isStreaming, streaming.isComplete, runs, projectId]);
 
   if (project === undefined || artifacts === undefined || runs === undefined) {
     return (
@@ -149,12 +154,7 @@ function ProjectContent({ id }: { id: string }) {
       console.log("Created run:", runId);
       setCurrentRunId(runId);
 
-      // Start streaming generation
-      await streaming.startGeneration(
-        projectId,
-        "", // Empty spec since API gets it from the run
-        "gpt-4-turbo"
-      );
+      // The auto-start useEffect will handle starting the streaming
     } catch (err) {
       const errorMessage =
         err instanceof Error
@@ -182,7 +182,7 @@ function ProjectContent({ id }: { id: string }) {
         <div className="flex gap-2">
           <Button
             variant="outline"
-            onClick={handleRegenerate}
+            onClick={() => void handleRegenerate()}
             disabled={streaming.isStreaming || !!isRunInProgress}
           >
             {streaming.isStreaming ? "Generating..." : "Regenerate App"}
@@ -278,7 +278,7 @@ function RunsTab({ runs }: { runs: any[] }) {
       <div className="text-center py-12 bg-gray-50 rounded-lg">
         <h2 className="text-xl font-medium mb-2">No runs yet</h2>
         <p className="text-gray-500">
-          Click "Regenerate App" to start a new run.
+          Click &quot;Regenerate App&quot; to start a new run.
         </p>
       </div>
     );

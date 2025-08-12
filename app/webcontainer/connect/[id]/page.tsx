@@ -1,8 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
-import Link from "next/link";
 
 export default function WebContainerConnectRoute({
   params,
@@ -12,8 +10,6 @@ export default function WebContainerConnectRoute({
   const [message, setMessage] = useState("Connecting to WebContainer...");
   const [debug, setDebug] = useState<string[]>([]);
   const [directUrl, setDirectUrl] = useState<string | null>(null);
-  const [projectId, setProjectId] = useState<string | null>(null);
-  const router = useRouter();
 
   useEffect(() => {
     // This function handles the WebContainer redirect
@@ -40,7 +36,6 @@ export default function WebContainerConnectRoute({
 
       const storedProjectId = localStorage.getItem("current_project_id");
       if (storedProjectId) {
-        setProjectId(storedProjectId);
         setDebug((prev) => [
           ...prev,
           `Found project ID in localStorage: ${storedProjectId}`,

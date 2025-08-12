@@ -3,7 +3,7 @@
 import { Button } from "@/components/ui/button";
 import { Authenticated, Unauthenticated, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
-import { SignInButton, SignUpButton } from "@clerk/nextjs";
+import { SignUpButton } from "@clerk/nextjs";
 import { Header } from "@/components/layout/header";
 import { Skeleton } from "@/components/ui/skeleton";
 import Link from "next/link";
@@ -21,24 +21,6 @@ export default function Home() {
         </Unauthenticated>
       </main>
     </>
-  );
-}
-
-function SignInAndSignUpButtons() {
-  return (
-    <div className="flex gap-4">
-      <Authenticated>
-        <Link href="/account">Account</Link>
-      </Authenticated>
-      <Unauthenticated>
-        <SignInButton mode="modal">
-          <Button variant="ghost">Sign in</Button>
-        </SignInButton>
-        <SignUpButton mode="modal">
-          <Button>Sign up</Button>
-        </SignUpButton>
-      </Unauthenticated>
-    </div>
   );
 }
 

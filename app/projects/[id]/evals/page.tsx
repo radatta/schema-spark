@@ -21,12 +21,10 @@ import { Badge } from "@/components/ui/badge";
 import { format } from "date-fns";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
-import { useRouter } from "next/navigation";
 
 export default function EvalPage() {
   const params = useParams();
   const projectId = params.id as string;
-  const router = useRouter();
 
   return (
     <>

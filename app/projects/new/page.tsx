@@ -132,7 +132,7 @@ function NewProjectForm() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <form onSubmit={handleSubmit}>
+          <form onSubmit={(e) => void handleSubmit(e)}>
             <div className="space-y-4">
               <div>
                 <label

@@ -103,6 +103,12 @@ export function useStreamingGeneration(runId: Id<"runs"> | null) {
       return;
     }
 
+    // Prevent multiple simultaneous streaming calls
+    if (state.isStreaming) {
+      console.log("Streaming already in progress, skipping duplicate call");
+      return;
+    }
+
     try {
       // Get auth token
       const authToken = await getToken({ template: "convex" });
@@ -278,18 +284,21 @@ export function useStreamingGeneration(runId: Id<"runs"> | null) {
             title: "Planning Started",
             description: "Analyzing requirements and creating file plan...",
             variant: "default",
+            duration: 10000,
           });
         } else if (event.data.phase === "generating") {
           toast({
             title: "Code Generation Started",
             description: "Creating your application files...",
             variant: "default",
+            duration: 10000,
           });
         } else if (event.data.phase === "validating") {
           toast({
             title: "Validation Started",
             description: "Testing the generated code...",
             variant: "default",
+            duration: 10000,
           });
         }
         break;
@@ -324,6 +333,7 @@ export function useStreamingGeneration(runId: Id<"runs"> | null) {
           title: "Generating File",
           description: `Creating ${event.data.filePath}...`,
           variant: "default",
+          duration: 10000,
         });
         break;
 
@@ -370,7 +380,8 @@ export function useStreamingGeneration(runId: Id<"runs"> | null) {
         toast({
           title: "Generation Complete!",
           description: event.data.message,
-          variant: "default",
+          variant: "success",
+          duration: 10000,
         });
         break;
 
@@ -388,6 +399,7 @@ export function useStreamingGeneration(runId: Id<"runs"> | null) {
           title: "Generation Failed",
           description: event.data.message,
           variant: "destructive",
+          duration: 10000,
         });
         break;
     }

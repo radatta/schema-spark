@@ -152,7 +152,7 @@ export function StackBlitzEditor({
       }
     }
 
-    initializeStackBlitz();
+    void initializeStackBlitz();
 
     // Cleanup function
     return () => {
@@ -160,12 +160,13 @@ export function StackBlitzEditor({
       if (vmRef.current) {
         vmRef.current = null;
       }
-      if (containerRef.current) {
-        containerRef.current.innerHTML = "";
+      const container = containerRef.current;
+      if (container) {
+        container.innerHTML = "";
       }
       setInitialized(false); // Reset initialization state
     };
-  }, [mounted, projectName, isGenerating]); // Added isGenerating back to trigger on generation start
+  }, [mounted, projectName, isGenerating]);
 
   // Separate effect for updating files after initialization
   useEffect(() => {
@@ -193,8 +194,10 @@ export function StackBlitzEditor({
       }
     }
 
-    updateFiles();
-  }, [artifacts, initialized]); // Only watch artifacts and initialization state  // Handle artifacts updates using applyFsDiff (without reinitializing)
+    void updateFiles();
+  }, [artifacts, initialized]);
+
+  // Handle artifacts updates using applyFsDiff (without reinitializing)
   useEffect(() => {
     if (!vmRef.current || !initialized || artifacts.length === 0) {
       return;

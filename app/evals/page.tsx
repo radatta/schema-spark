@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { Header } from "@/components/layout/header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -14,9 +13,7 @@ import {
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { api } from "@/convex/_generated/api";
-import { useMutation, useQuery, useAction } from "convex/react";
-import { Authenticated, Unauthenticated } from "convex/react";
-import { SignInButton } from "@clerk/nextjs";
+import { useQuery, useAction } from "convex/react";
 import {
   Select,
   SelectContent,
@@ -26,7 +23,6 @@ import {
 } from "@/components/ui/select";
 import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { CheckIcon, XIcon } from "lucide-react";
 
 export default function Evaluations() {
   const [selectedModel, setSelectedModel] = useState("all");
@@ -74,7 +70,7 @@ export default function Evaluations() {
     <div>
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-3xl font-bold">Model Evaluations</h1>
-        <Button onClick={handleRunBatchEval} disabled={runningBatch}>
+        <Button onClick={() => void handleRunBatchEval()} disabled={runningBatch}>
           {runningBatch ? "Running..." : "Run Batch Evaluation"}
         </Button>
       </div>
