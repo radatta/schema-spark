@@ -55,16 +55,14 @@ function ProjectContent({ id }: { id: string }) {
   const createRun = useMutation(api.runs.create);
 
   const [error, setError] = useState("");
-  const [currentRunId, setCurrentRunId] = useState<Id<"runs"> | null>(
-    null
-  );
+  const [currentRunId, setCurrentRunId] = useState<Id<"runs"> | null>(null);
 
   // Initialize streaming hook
   const streaming = useStreamingGeneration(currentRunId);
 
   // Set the latest run ID when runs data is loaded
   useEffect(() => {
-    if (runs && runs.length > 0) {
+    if (runs && runs.length > 0 && currentRunId === null) {
       const latestRun = runs[0];
 
       // Check if there's an in-progress run and track it
@@ -85,7 +83,34 @@ function ProjectContent({ id }: { id: string }) {
         setCurrentRunId(latestRun._id);
       }
     }
-  }, [runs]);
+  }, [runs, currentRunId]);
+
+  // Auto-start streaming for new runs that are just created
+  useEffect(() => {
+    if (currentRunId && !streaming.isStreaming && runs) {
+      const currentRun = runs.find((run) => run._id === currentRunId);
+
+      // Only start streaming for truly in-progress runs, not completed ones
+      if (
+        currentRun &&
+        ["planning", "generating", "validating"].includes(currentRun.status)
+      ) {
+        console.log("Auto-starting streaming for run:", currentRunId);
+
+        // Start streaming generation with a default spec (the actual spec is handled server-side)
+        streaming
+          .startGeneration(
+            projectId,
+            "", // Empty spec since API gets it from the run
+            "gpt-4-turbo"
+          )
+          .catch((err) => {
+            console.error("Auto-streaming generation failed:", err);
+            setError(err instanceof Error ? err.message : "Generation failed");
+          });
+      }
+    }
+  }, [currentRunId, streaming.isStreaming, runs, projectId]);
 
   // Use the run status hook to show toast notifications
   useRunStatus(currentRunId || undefined);
@@ -118,6 +143,7 @@ function ProjectContent({ id }: { id: string }) {
         projectId,
         model: "gpt-4-turbo",
         promptVersion: "v1",
+        inputSpec: "Todo app with title and done fields", // For regeneration, use a default or get from user
       });
 
       console.log("Created run:", runId);
@@ -126,10 +152,9 @@ function ProjectContent({ id }: { id: string }) {
       // Start streaming generation
       await streaming.startGeneration(
         projectId,
-        "Todo app with title and done fields",
+        "", // Empty spec since API gets it from the run
         "gpt-4-turbo"
       );
-
     } catch (err) {
       const errorMessage =
         err instanceof Error
@@ -169,16 +194,32 @@ function ProjectContent({ id }: { id: string }) {
       </div>
 
       {/* Streaming status */}
-      {streaming.isStreaming && (
-        <div className="bg-blue-50 border border-blue-200 text-blue-700 px-4 py-3 rounded mb-6">
+      {(streaming.isStreaming || streaming.isReconnecting) && (
+        <div
+          className={`border px-4 py-3 rounded mb-6 ${
+            streaming.isReconnecting
+              ? "bg-yellow-50 border-yellow-200 text-yellow-700"
+              : "bg-blue-50 border-blue-200 text-blue-700"
+          }`}
+        >
           <div className="flex items-center justify-between">
             <div>
-              <span className="font-medium">{streaming.currentPhase}</span>
+              <span className="font-medium">
+                {streaming.isReconnecting
+                  ? `Reconnecting... (Attempt ${streaming.retryCount}/3)`
+                  : streaming.currentPhase}
+              </span>
               {streaming.currentMessage && (
                 <span className="ml-2 text-sm">{streaming.currentMessage}</span>
               )}
             </div>
-            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
+            <div
+              className={`animate-spin rounded-full h-4 w-4 border-b-2 ${
+                streaming.isReconnecting
+                  ? "border-yellow-600"
+                  : "border-blue-600"
+              }`}
+            ></div>
           </div>
           {streaming.planContent && (
             <div className="mt-2 text-sm">
@@ -213,15 +254,13 @@ function ProjectContent({ id }: { id: string }) {
         </TabsList>
 
         <TabsContent value="artifacts">
-          <StackBlitzEditor 
-            artifacts={artifacts} 
+          <StackBlitzEditor
+            artifacts={artifacts}
             projectName={project.name}
             streamingFiles={activeFiles}
             isGenerating={streaming.isStreaming}
-            currentFile={streaming.currentPhase === 'schema' ? 'convex/schema.ts' :
-                       streaming.currentPhase === 'queries' ? 'convex/queries.ts' :
-                       streaming.currentPhase === 'mutations' ? 'convex/mutations.ts' :
-                       streaming.currentPhase === 'ui' ? 'app/page.tsx' : undefined}
+            currentFile={streaming.currentFile || undefined}
+            newlyCreatedFiles={streaming.newlyCreatedFiles}
           />
         </TabsContent>
 

@@ -16,6 +16,7 @@ interface StackBlitzEditorProps {
   streamingFiles?: Record<string, string>;
   isGenerating?: boolean;
   currentFile?: string;
+  newlyCreatedFiles?: Set<string>; // Track which files are newly created
 }
 
 export function StackBlitzEditor({
@@ -24,6 +25,7 @@ export function StackBlitzEditor({
   streamingFiles = {},
   isGenerating = false,
   currentFile,
+  newlyCreatedFiles = new Set(),
 }: StackBlitzEditorProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const vmRef = useRef<VM | null>(null);
@@ -38,7 +40,17 @@ export function StackBlitzEditor({
   }, []);
 
   useEffect(() => {
-    if (!mounted || !containerRef.current || !artifacts.length) {
+    if (!mounted || !containerRef.current) {
+      setIsLoading(false);
+      return;
+    }
+
+    // Initialize StackBlitz if:
+    // 1. We have artifacts, OR
+    // 2. We're currently generating (for streaming)
+    const shouldInitialize = artifacts.length > 0 || isGenerating;
+
+    if (!shouldInitialize) {
       setIsLoading(false);
       return;
     }
@@ -66,6 +78,12 @@ export function StackBlitzEditor({
         artifacts.forEach((artifact) => {
           files[artifact.path] = artifact.content;
         });
+
+        // If we're generating but have no artifacts yet, start with a basic file
+        if (isGenerating && Object.keys(files).length === 0) {
+          files["README.md"] =
+            "# Generating your application...\n\nPlease wait while we create your files.";
+        }
 
         // Determine the template based on the files
         let template:
@@ -109,15 +127,9 @@ export function StackBlitzEditor({
           },
           {
             height: 600,
-            openFile: files["index.html"]
-              ? "index.html"
-              : Object.keys(files)[0],
+            openFile: files["README.md"] ? "README.md" : Object.keys(files)[0],
             view: "default",
-            theme: "light",
-            hideExplorer: false,
-            hideNavigation: false,
-            forceEmbedLayout: true,
-            // crossOriginIsolated: true,
+            theme: "dark",
           }
         );
 
@@ -148,69 +160,125 @@ export function StackBlitzEditor({
         containerRef.current.innerHTML = "";
       }
     };
-  }, [mounted, artifacts, projectName]);
+  }, [mounted, artifacts, projectName, isGenerating]);
 
   // Handle streaming file updates
+  // Add debouncing for file updates to prevent partial file analysis
+  const [debouncedStreamingFiles, setDebouncedStreamingFiles] = useState<
+    Record<string, string>
+  >({});
+
   useEffect(() => {
-    if (!vmRef.current || !isGenerating || Object.keys(streamingFiles).length === 0) {
+    if (!isGenerating || Object.keys(streamingFiles).length === 0) {
+      setDebouncedStreamingFiles({});
       return;
     }
 
+    // Debounce file updates to prevent StackBlitz from analyzing incomplete files
+    const timeoutId = setTimeout(() => {
+      setDebouncedStreamingFiles(streamingFiles);
+    }, 50); // 150ms debounce
+
+    return () => clearTimeout(timeoutId);
+  }, [streamingFiles, isGenerating]);
+
+  useEffect(() => {
+    if (
+      !vmRef.current ||
+      !isGenerating ||
+      Object.keys(debouncedStreamingFiles).length === 0
+    ) {
+      return;
+    }
     // Apply file updates using applyFsDiff
     const filesToUpdate: Record<string, string> = {};
-    
-    for (const [filePath, content] of Object.entries(streamingFiles)) {
-      if (content && content.trim()) {
-        filesToUpdate[filePath] = content;
-      }
+
+    for (const [filePath, content] of Object.entries(debouncedStreamingFiles)) {
+      // For streaming, include all files even if they have minimal content
+      filesToUpdate[filePath] = content || "";
     }
 
     if (Object.keys(filesToUpdate).length > 0) {
-      vmRef.current.applyFsDiff({
-        create: filesToUpdate,
-        destroy: [], // Required property for FsDiff
-      }).catch((error) => {
-        console.error("Failed to update streaming files:", error);
-      });
+      vmRef.current
+        .applyFsDiff({
+          create: filesToUpdate,
+          destroy: [], // Required property for FsDiff
+        })
+        .then(async () => {
+          // Only focus on the current file if it's newly created, not on every update
+          if (
+            currentFile &&
+            vmRef.current?.editor &&
+            filesToUpdate[currentFile] &&
+            newlyCreatedFiles.has(currentFile)
+          ) {
+            try {
+              console.log("Opening newly created file:", currentFile);
+              // Small delay to ensure StackBlitz has processed the file creation
+              await new Promise((resolve) => setTimeout(resolve, 100));
 
-      // Open the current file being generated if specified
-      if (currentFile && vmRef.current.editor && filesToUpdate[currentFile]) {
-        vmRef.current.editor.openFile(currentFile).catch((error) => {
-          console.error("Failed to open current file:", error);
+              // Try to open the newly created file
+              await vmRef.current.editor.openFile(currentFile);
+
+              // Also set it as the current file if the method exists
+              if (vmRef.current.editor.setCurrentFile) {
+                await vmRef.current.editor.setCurrentFile(currentFile);
+              }
+            } catch (error) {
+              // Handle specific StackBlitz file not found errors silently
+              if (
+                error instanceof Error &&
+                error.message.includes("Could not find source file")
+              ) {
+                // This is expected during rapid streaming - file might not be ready yet
+                console.debug(`File ${currentFile} not ready for focusing yet`);
+              } else {
+                // Log other unexpected errors
+                console.warn(
+                  `Unexpected error focusing on ${currentFile}:`,
+                  error
+                );
+              }
+            }
+          }
+        })
+        .catch((error) => {
+          console.error("Failed to update streaming files:", error);
         });
-      }
     }
-  }, [streamingFiles, isGenerating, currentFile]);
-
-  if (!artifacts.length) {
-    return (
-      <div className="flex items-center justify-center h-96 bg-gray-50 rounded-lg border-2 border-dashed border-gray-300">
-        <div className="text-center">
-          <h3 className="text-lg font-medium text-gray-900 mb-2">
-            No artifacts yet
-          </h3>
-          <p className="text-gray-500">
-            Run the agent to generate app artifacts.
-          </p>
-        </div>
-      </div>
-    );
-  }
+  }, [debouncedStreamingFiles, isGenerating, currentFile, newlyCreatedFiles]);
 
   if (error) {
     return (
       <div className="flex items-center justify-center h-96 bg-red-50 rounded-lg border border-red-200">
-        <div className="text-center">
+        <div className="text-center max-w-md">
           <h3 className="text-lg font-medium text-red-900 mb-2">
-            Failed to load StackBlitz
+            Failed to load StackBlitz IDE
           </h3>
-          <p className="text-red-700">{error}</p>
-          <button
-            onClick={() => window.location.reload()}
-            className="mt-2 px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700"
-          >
-            Retry
-          </button>
+          <p className="text-red-700 mb-4 text-sm">{error}</p>
+          <div className="space-x-2">
+            <button
+              onClick={() => {
+                setError(null);
+                setIsLoading(true);
+                // Trigger re-initialization
+                window.location.reload();
+              }}
+              className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 transition-colors"
+            >
+              Retry
+            </button>
+            <button
+              onClick={() => setError(null)}
+              className="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 transition-colors"
+            >
+              Dismiss
+            </button>
+          </div>
+          <p className="text-xs text-gray-500 mt-2">
+            If this persists, try refreshing the page or check your network
+            connection.
+          </p>
         </div>
       </div>
     );

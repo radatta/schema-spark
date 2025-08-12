@@ -5,6 +5,18 @@ const nextConfig = {
       {
         source: '/(.*)',
         headers: [
+          // {
+          //   key: 'Cross-Origin-Opener-Policy',
+          //   value: 'same-origin',
+          // },
+          // {
+          //   key: 'Cross-Origin-Embedder-Policy',
+          //   value: 'credentialless',
+          // },
+          // {
+          //   key: 'Cross-Origin-Resource-Policy',
+          //   value: 'cross-origin',
+          // },
           {
             key: 'Content-Security-Policy',
             value: [
@@ -16,7 +28,7 @@ const nextConfig = {
               "style-src 'self' 'unsafe-inline'",
               "default-src 'self'"
             ].join('; ')
-          },
+          }
         ],
       },
     ]

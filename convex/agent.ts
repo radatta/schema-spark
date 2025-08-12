@@ -462,7 +462,7 @@ export const run = action({
                 temperature: 0.2,
             });
 
-            const schemaContent = schemaResponse.choices[0]?.message?.content ||
+            const schemaContent =
                 `import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 
@@ -525,9 +525,16 @@ export default defineSchema({
                 messages: [
                     {
                         role: "system",
-                        content: `You are an expert Convex developer. Create a queries.ts file with Convex query functions
-                     based on the schema and application plan. Include all necessary imports and type safety.
-                     Only output valid TypeScript code without any explanation.`
+                        content: `
+You are an expert Convex developer.
+You must respond ONLY with a complete, valid TypeScript file for \`queries.ts\`.
+The output must contain:
+- All necessary imports.
+- All Convex query functions based on the provided schema and application plan.
+- Full type safety.
+Formatting rules:
+- Do NOT include any explanation, comments, markdown fences, or surrounding text.
+- Output ONLY raw, compilable TypeScript code.`,
                     },
                     {
                         role: "user",
@@ -537,7 +544,7 @@ export default defineSchema({
                 temperature: 0.2,
             });
 
-            const queriesContent = queriesResponse.choices[0]?.message?.content ||
+            const queriesContent =
                 `import { query } from "./_generated/server";
 import { v } from "convex/values";
 
@@ -622,7 +629,7 @@ export const list = query({
                 temperature: 0.2,
             });
 
-            const mutationsContent = mutationsResponse.choices[0]?.message?.content ||
+            const mutationsContent =
                 `import { mutation } from "./_generated/server";
 import { v } from "convex/values";
 
@@ -717,7 +724,7 @@ export const create = mutation({
                 temperature: 0.2,
             });
 
-            const uiComponentContent = uiResponse.choices[0]?.message?.content ||
+            const uiComponentContent =
                 `'use client';
 
 import { useState } from "react";

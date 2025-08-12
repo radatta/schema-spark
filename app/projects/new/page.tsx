@@ -13,21 +13,12 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { StickyHeader } from "@/components/layout/sticky-header";
 import { SignInButton, SignUpButton, UserButton } from "@clerk/nextjs";
-import {
-  Authenticated,
-  Unauthenticated,
-  useMutation,
-  useAction,
-} from "convex/react";
+import { Authenticated, Unauthenticated, useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
-import { Id } from "@/convex/_generated/dataModel";
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { FormEvent } from "react";
-import { useRunStatus } from "@/hooks/use-run-status";
-import { useToast } from "@/components/ui/use-toast";
-import { useStreamingGeneration } from "@/hooks/use-streaming-generation";
 
 export default function NewProject() {
   return (
@@ -85,45 +76,6 @@ function NewProjectForm() {
   const [spec, setSpec] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState("");
-  const [currentRunId, setCurrentRunId] = useState<Id<"runs"> | null>(null);
-  const [projectId, setProjectId] = useState<Id<"projects"> | null>(null);
-
-  // Initialize streaming hook
-  const streaming = useStreamingGeneration(currentRunId);
-
-  // Use the run status hook to show toast notifications
-  useRunStatus(currentRunId || undefined);
-
-  // Debug currentRunId changes
-  useEffect(() => {
-    console.log(`NewProjectForm: currentRunId changed to: ${currentRunId}`);
-  }, [currentRunId]);
-
-  // Auto-navigate when streaming is complete
-  useEffect(() => {
-    if (streaming.isComplete && projectId) {
-      console.log("Streaming completed, navigating to project page");
-      setTimeout(() => {
-        router.push(`/projects/${projectId}`);
-      }, 2000); // Give time for completion toast
-    }
-  }, [streaming.isComplete, projectId, router]);
-
-  // Start streaming when run ID becomes available
-  useEffect(() => {
-    if (currentRunId && projectId && spec.trim() && !streaming.isStreaming) {
-      console.log("Starting streaming generation with run ID:", currentRunId);
-      streaming.startGeneration(
-        projectId,
-        spec.trim(),
-        "gpt-4-turbo"
-      ).catch((err) => {
-        console.error("Streaming generation failed:", err);
-        setError(err instanceof Error ? err.message : "Generation failed");
-        setIsSubmitting(false);
-      });
-    }
-  }, [currentRunId, projectId]);
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -140,23 +92,19 @@ function NewProjectForm() {
       // Create the project
       const newProjectId = await createProject({ name: name.trim() });
       console.log("Project created with ID:", newProjectId);
-      setProjectId(newProjectId);
 
-      // Create a run first so we can start monitoring it immediately
+      // Create a run for the generation
       const runId = await createRun({
         projectId: newProjectId,
         model: "gpt-4-turbo",
         promptVersion: "v1",
+        inputSpec: spec.trim(), // Pass the spec to the run
       });
 
       console.log("Run created with ID:", runId);
 
-      // Start monitoring the run status immediately
-      setCurrentRunId(runId);
-      console.log("Started monitoring run:", runId);
-
-      // Streaming will start automatically via useEffect when currentRunId is set
-
+      // Redirect immediately to the project page
+      router.push(`/projects/${newProjectId}`);
     } catch (err) {
       const errorMessage =
         err instanceof Error
@@ -198,7 +146,7 @@ function NewProjectForm() {
                   placeholder="My App"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  disabled={isSubmitting || streaming.isStreaming}
+                  disabled={isSubmitting}
                 />
               </div>
 
@@ -214,7 +162,7 @@ function NewProjectForm() {
                   placeholder={exampleSpec}
                   value={spec}
                   onChange={(e) => setSpec(e.target.value)}
-                  disabled={isSubmitting || streaming.isStreaming}
+                  disabled={isSubmitting}
                   className="min-h-[150px]"
                 />
                 <p className="text-sm text-gray-500 mt-1">
@@ -222,54 +170,12 @@ function NewProjectForm() {
                 </p>
               </div>
 
-              {(error || streaming.error) && (
-                <div className="text-red-500 text-sm">{error || streaming.error}</div>
-              )}
-
-              {/* Streaming status display */}
-              {streaming.isStreaming && (
-                <div className="bg-blue-50 border border-blue-200 text-blue-700 px-4 py-3 rounded">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <span className="font-medium">{streaming.currentPhase}</span>
-                      {streaming.currentMessage && (
-                        <span className="ml-2 text-sm">{streaming.currentMessage}</span>
-                      )}
-                    </div>
-                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
-                  </div>
-                  {streaming.planContent && (
-                    <div className="mt-2 text-sm">
-                      <details className="cursor-pointer">
-                        <summary>View Plan</summary>
-                        <pre className="mt-2 text-xs bg-white p-2 rounded border overflow-auto max-h-32">
-                          {streaming.planContent}
-                        </pre>
-                      </details>
-                    </div>
-                  )}
-                  {Object.keys(streaming.files).length > 0 && (
-                    <div className="mt-2 text-sm">
-                      <div className="text-xs text-blue-600">
-                        Generated files: {Object.keys(streaming.files).join(", ")}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
+              {error && <div className="text-red-500 text-sm">{error}</div>}
             </div>
 
             <div className="mt-6">
-              <Button 
-                type="submit" 
-                className="w-full" 
-                disabled={isSubmitting || streaming.isStreaming}
-              >
-                {streaming.isStreaming 
-                  ? `Generating (${streaming.currentPhase})...` 
-                  : isSubmitting 
-                    ? "Creating Project..." 
-                    : "Generate App"}
+              <Button type="submit" className="w-full" disabled={isSubmitting}>
+                {isSubmitting ? "Creating Project..." : "Generate App"}
               </Button>
             </div>
           </form>

@@ -7,9 +7,10 @@ export const create = mutation({
         projectId: v.id("projects"),
         model: v.string(),
         promptVersion: v.string(),
+        inputSpec: v.optional(v.string()), // Add inputSpec parameter
     },
     handler: async (ctx, args) => {
-        const { projectId, model, promptVersion } = args;
+        const { projectId, model, promptVersion, inputSpec } = args;
 
         // Authenticate user and check project ownership
         const identity = await ctx.auth.getUserIdentity();
@@ -42,6 +43,7 @@ export const create = mutation({
             status: "planning", // Start in planning state
             model,
             promptVersion,
+            inputSpec, // Store the input spec
             createdAt: Date.now(),
         });
     },

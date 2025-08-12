@@ -8,14 +8,16 @@ import { Authenticated, Unauthenticated, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Skeleton } from "@/components/ui/skeleton";
 import Link from "next/link";
-import { formatDistanceToNow } from 'date-fns';
+import { formatDistanceToNow } from "date-fns";
 
 export default function Projects() {
   return (
     <>
       <StickyHeader className="px-4 py-2">
         <div className="flex justify-between items-center">
-          <Link href="/" className="font-bold text-xl">Schema Spark</Link>
+          <Link href="/" className="font-bold text-xl">
+            Schema Spark
+          </Link>
           <SignInAndSignUpButtons />
         </div>
       </StickyHeader>
@@ -65,7 +67,7 @@ function ProjectsList() {
           <h1 className="text-3xl font-bold">My Projects</h1>
           <Skeleton className="h-10 w-32" />
         </div>
-        
+
         <div className="grid grid-cols-1 gap-4">
           <Skeleton className="h-24 w-full" />
           <Skeleton className="h-24 w-full" />
@@ -83,7 +85,7 @@ function ProjectsList() {
           <Link href="/projects/new">Create New Project</Link>
         </Button>
       </div>
-      
+
       {projects.length === 0 ? (
         <div className="text-center py-12">
           <h2 className="text-xl font-medium mb-3">No projects yet</h2>
@@ -97,23 +99,30 @@ function ProjectsList() {
       ) : (
         <div className="grid grid-cols-1 gap-4">
           {projects.map((project) => (
-            <Card key={project._id} className="p-6 hover:shadow-md transition-shadow">
+            <Card
+              key={project._id}
+              className="p-6 hover:shadow-md transition-shadow"
+            >
               <div className="flex justify-between items-start">
                 <div>
                   <h2 className="text-xl font-bold mb-1">
-                    <Link href={`/projects/${project._id}`} className="hover:underline">
+                    <Link
+                      href={`/projects/${project._id}`}
+                      className="hover:underline"
+                    >
                       {project.name}
                     </Link>
                   </h2>
                   <p className="text-sm text-gray-500">
-                    Created {formatDistanceToNow(project.createdAt, { addSuffix: true })}
+                    Created{" "}
+                    {formatDistanceToNow(project.createdAt, {
+                      addSuffix: true,
+                    })}
                   </p>
                 </div>
                 <div className="flex gap-2">
                   <Button variant="outline" size="sm" asChild>
-                    <Link href={`/projects/${project._id}`}>
-                      View Details
-                    </Link>
+                    <Link href={`/projects/${project._id}`}>View Details</Link>
                   </Button>
                 </div>
               </div>

@@ -44,6 +44,7 @@ export default defineSchema(
       status: v.string(), // "planning" | "generating" | "validating" | "completed" | "failed"
       model: v.string(),
       promptVersion: v.string(),
+      inputSpec: v.optional(v.string()), // Store the spec used for this run
       tokenUsage: v.optional(v.number()),
       cost: v.optional(v.number()),
       timings: v.optional(v.object({
