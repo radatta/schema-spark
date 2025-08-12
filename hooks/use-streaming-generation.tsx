@@ -1,8 +1,13 @@
 import { useState, useEffect, useRef } from "react";
 import { Id } from "@/convex/_generated/dataModel";
 import { useAuth } from "@clerk/nextjs";
+import { useToast } from "@/components/ui/use-toast";
 
 export type StreamEvent =
+  | {
+      type: "connection_test";
+      data: { message: string; runId: string; timestamp: string };
+    }
   | { type: "status"; data: { phase: string; message: string } }
   | { type: "plan_chunk"; data: { content: string; accumulated: string } }
   | { type: "plan_complete"; data: { content: string } }
@@ -36,6 +41,7 @@ export interface StreamingState {
 
 export function useStreamingGeneration(runId: Id<"runs"> | null) {
   const { getToken } = useAuth();
+  const { toast } = useToast();
   const [state, setState] = useState<StreamingState>({
     isStreaming: false,
     currentPhase: "",
@@ -142,31 +148,77 @@ export function useStreamingGeneration(runId: Id<"runs"> | null) {
         throw new Error("No response body");
       }
 
+      console.log("Starting to read response stream...");
+
       // Create EventSource-like interface for Server-Sent Events
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
+      let buffer = ""; // Buffer to accumulate partial SSE messages
 
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
 
         const chunk = decoder.decode(value, { stream: true });
-        const lines = chunk.split("\n");
+        console.log("Received SSE chunk:", JSON.stringify(chunk));
 
-        let currentEventType = "";
-        for (const line of lines) {
-          if (line.startsWith("event: ")) {
-            currentEventType = line.slice(7).trim();
-            continue;
+        // Add chunk to buffer
+        buffer += chunk;
+
+        // Split by double newline to get complete SSE messages
+        const messages = buffer.split("\n\n");
+
+        // Keep the last incomplete message in buffer (if any)
+        buffer = messages.pop() || "";
+
+        // Process complete messages
+        for (const message of messages) {
+          if (!message.trim()) continue;
+
+          console.log(
+            "Processing complete SSE message:",
+            JSON.stringify(message)
+          );
+
+          const lines = message.split("\n");
+          let eventType = "";
+          let eventData = "";
+
+          for (const line of lines) {
+            console.log("Processing message line:", JSON.stringify(line));
+
+            if (line.startsWith("event: ")) {
+              eventType = line.slice(7).trim();
+              console.log("Found event type:", eventType);
+            } else if (line.startsWith("data: ")) {
+              eventData = line.slice(6);
+              console.log("Found event data:", eventData);
+            }
           }
 
-          if (line.startsWith("data: ") && currentEventType) {
+          // If we have both event type and data, process the event
+          if (eventType && eventData) {
             try {
-              const data = JSON.parse(line.slice(6));
-              handleStreamEvent({ type: currentEventType as any, data });
+              const parsedData = JSON.parse(eventData);
+              console.log("Parsed SSE event:", {
+                type: eventType,
+                data: parsedData,
+              });
+              handleStreamEvent({ type: eventType as any, data: parsedData });
             } catch (e) {
-              console.error("Failed to parse SSE data:", e);
+              console.error(
+                "Failed to parse SSE event data:",
+                e,
+                "Data:",
+                eventData
+              );
             }
+          } else {
+            console.warn("Incomplete SSE message:", {
+              eventType,
+              eventData,
+              message,
+            });
           }
         }
       }
@@ -205,13 +257,41 @@ export function useStreamingGeneration(runId: Id<"runs"> | null) {
   };
 
   const handleStreamEvent = (event: StreamEvent) => {
+    console.log("Handling stream event:", event.type, event);
+
     switch (event.type) {
+      case "connection_test":
+        console.log("✅ SSE connection confirmed:", event.data);
+        break;
+
       case "status":
+        console.log("Processing status event:", event);
         setState((prev) => ({
           ...prev,
           currentPhase: event.data.phase,
           currentMessage: event.data.message,
         }));
+
+        // Show toast for major phase changes
+        if (event.data.phase === "planning") {
+          toast({
+            title: "Planning Started",
+            description: "Analyzing requirements and creating file plan...",
+            variant: "default",
+          });
+        } else if (event.data.phase === "generating") {
+          toast({
+            title: "Code Generation Started",
+            description: "Creating your application files...",
+            variant: "default",
+          });
+        } else if (event.data.phase === "validating") {
+          toast({
+            title: "Validation Started",
+            description: "Testing the generated code...",
+            variant: "default",
+          });
+        }
         break;
 
       case "plan_chunk":
@@ -237,6 +317,13 @@ export function useStreamingGeneration(runId: Id<"runs"> | null) {
             currentFile: event.data.filePath,
             newlyCreatedFiles: newCreatedFiles,
           };
+        });
+
+        // Show toast for file generation start
+        toast({
+          title: "Generating File",
+          description: `Creating ${event.data.filePath}...`,
+          variant: "default",
         });
         break;
 
@@ -278,6 +365,13 @@ export function useStreamingGeneration(runId: Id<"runs"> | null) {
           retryCount: 0,
           isReconnecting: false,
         }));
+
+        // Show success toast
+        toast({
+          title: "Generation Complete!",
+          description: event.data.message,
+          variant: "default",
+        });
         break;
 
       case "error":
@@ -288,6 +382,13 @@ export function useStreamingGeneration(runId: Id<"runs"> | null) {
           currentFile: null,
           isReconnecting: false,
         }));
+
+        // Show error toast
+        toast({
+          title: "Generation Failed",
+          description: event.data.message,
+          variant: "destructive",
+        });
         break;
     }
   };

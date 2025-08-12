@@ -32,6 +32,7 @@ export function StackBlitzEditor({
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [mounted, setMounted] = useState(false);
+  const [initialized, setInitialized] = useState(false); // Track if we've initialized
 
   // Ensure component is mounted before initializing StackBlitz
   useEffect(() => {
@@ -45,10 +46,12 @@ export function StackBlitzEditor({
       return;
     }
 
-    // Initialize StackBlitz if:
+    // Initialize StackBlitz when:
     // 1. We have artifacts, OR
-    // 2. We're currently generating (for streaming)
-    const shouldInitialize = artifacts.length > 0 || isGenerating;
+    // 2. We're currently generating (show "generating" message)
+    // 3. And we haven't initialized yet
+    const shouldInitialize =
+      (artifacts.length > 0 || isGenerating) && !initialized;
 
     if (!shouldInitialize) {
       setIsLoading(false);
@@ -135,6 +138,7 @@ export function StackBlitzEditor({
 
         if (!isCancelled) {
           vmRef.current = vm;
+          setInitialized(true); // Mark as initialized
           setIsLoading(false);
         }
       } catch (err) {
@@ -159,8 +163,63 @@ export function StackBlitzEditor({
       if (containerRef.current) {
         containerRef.current.innerHTML = "";
       }
+      setInitialized(false); // Reset initialization state
     };
-  }, [mounted, artifacts, projectName, isGenerating]);
+  }, [mounted, projectName, isGenerating]); // Added isGenerating back to trigger on generation start
+
+  // Separate effect for updating files after initialization
+  useEffect(() => {
+    if (!vmRef.current || !initialized || !artifacts.length) {
+      return;
+    }
+
+    async function updateFiles() {
+      try {
+        // Build the fs diff for StackBlitz
+        const filesToUpdate: Record<string, string> = {};
+        artifacts.forEach((artifact) => {
+          filesToUpdate[artifact.path] = artifact.content;
+        });
+
+        console.log("Updating StackBlitz files:", Object.keys(filesToUpdate));
+
+        // Apply file system diff with proper format
+        await vmRef.current!.applyFsDiff({
+          create: filesToUpdate,
+          destroy: [],
+        });
+      } catch (err) {
+        console.error("Failed to update StackBlitz files:", err);
+      }
+    }
+
+    updateFiles();
+  }, [artifacts, initialized]); // Only watch artifacts and initialization state  // Handle artifacts updates using applyFsDiff (without reinitializing)
+  useEffect(() => {
+    if (!vmRef.current || !initialized || artifacts.length === 0) {
+      return;
+    }
+
+    // Convert artifacts to files and apply diff
+    const artifactFiles: Record<string, string> = {};
+    artifacts.forEach((artifact) => {
+      artifactFiles[artifact.path] = artifact.content;
+    });
+
+    console.log(
+      "Updating StackBlitz with new artifacts:",
+      Object.keys(artifactFiles)
+    );
+
+    vmRef.current
+      .applyFsDiff({
+        create: artifactFiles,
+        destroy: [],
+      })
+      .catch((error) => {
+        console.error("Failed to update artifacts in StackBlitz:", error);
+      });
+  }, [artifacts, initialized]);
 
   // Handle streaming file updates
   // Add debouncing for file updates to prevent partial file analysis
@@ -261,8 +320,11 @@ export function StackBlitzEditor({
               onClick={() => {
                 setError(null);
                 setIsLoading(true);
-                // Trigger re-initialization
-                window.location.reload();
+                setInitialized(false); // Reset initialization to allow retry
+                // Force re-mount by clearing container
+                if (containerRef.current) {
+                  containerRef.current.innerHTML = "";
+                }
               }}
               className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 transition-colors"
             >
