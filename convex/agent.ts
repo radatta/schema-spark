@@ -85,6 +85,15 @@ function detectSecurityIssues(code: string): { issues: string[]; severity: 'low'
     return { issues, severity };
 }
 
+// Utility function to remove markdown code block wrappers
+function removeMarkdownCodeBlocks(content: string): string {
+    // Remove ```typescript, ```tsx, ```javascript, etc. from the beginning
+    content = content.replace(/^```(\w+)?\s*\n/, '');
+    // Remove ``` from the end
+    content = content.replace(/\n```\s*$/, '');
+    return content;
+}
+
 // Utility function to validate TypeScript code
 async function validateTypeScript(code: string): Promise<{
     valid: boolean;
@@ -316,9 +325,10 @@ export const run = action({
         inputSpec: v.string(),
         model: v.string(),
         promptVersion: v.string(),
+        runId: v.optional(v.id("runs")), // Optional existing run ID
     },
     handler: async (ctx, args): Promise<{ success: boolean; runId: Id<"runs">; error?: string; metrics?: any }> => {
-        const { projectId, model, promptVersion, inputSpec } = args;
+        const { projectId, model, promptVersion, inputSpec, runId: existingRunId } = args;
 
         // Tracking metrics
         const metrics = {
@@ -370,8 +380,8 @@ export const run = action({
             }
         };
 
-        // Create a new run in the database
-        const runId = await ctx.runMutation(api.runs.create, {
+        // Create a new run in the database or use existing one
+        const runId = existingRunId || await ctx.runMutation(api.runs.create, {
             projectId,
             model,
             promptVersion,
@@ -506,7 +516,7 @@ export default defineSchema({
             await ctx.runMutation(api.artifacts.upsert, {
                 projectId,
                 path: "convex/schema.ts",
-                content: schemaContent,
+                content: removeMarkdownCodeBlocks(schemaContent),
             });
 
             // Generate API queries file
@@ -591,7 +601,7 @@ export const list = query({
             await ctx.runMutation(api.artifacts.upsert, {
                 projectId,
                 path: "convex/queries.ts",
-                content: queriesContent,
+                content: removeMarkdownCodeBlocks(queriesContent),
             });
 
             // Generate API mutations file
@@ -682,7 +692,7 @@ export const create = mutation({
             await ctx.runMutation(api.artifacts.upsert, {
                 projectId,
                 path: "convex/mutations.ts",
-                content: mutationsContent,
+                content: removeMarkdownCodeBlocks(mutationsContent),
             });
 
             // Generate main UI component
@@ -821,7 +831,7 @@ export default function MainPage() {
             await ctx.runMutation(api.artifacts.upsert, {
                 projectId,
                 path: "app/main/page.tsx",
-                content: uiComponentContent,
+                content: removeMarkdownCodeBlocks(uiComponentContent),
             });
 
             // Generate package.json file for the project

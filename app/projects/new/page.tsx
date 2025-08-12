@@ -20,10 +20,13 @@ import {
   useAction,
 } from "convex/react";
 import { api } from "@/convex/_generated/api";
-import { useState } from "react";
+import { Id } from "@/convex/_generated/dataModel";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { FormEvent } from "react";
+import { useRunStatus } from "@/hooks/use-run-status";
+import { useToast } from "@/components/ui/use-toast";
 
 export default function NewProject() {
   return (
@@ -74,6 +77,7 @@ function SignInAndSignUpButtons() {
 
 function NewProjectForm() {
   const createProject = useMutation(api.projects.create);
+  const createRun = useMutation(api.runs.create);
   const runAgent = useAction(api.agent.run);
   const router = useRouter();
 
@@ -81,6 +85,17 @@ function NewProjectForm() {
   const [spec, setSpec] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState("");
+  const [currentRunId, setCurrentRunId] = useState<Id<"runs"> | undefined>(
+    undefined
+  );
+
+  // Use the run status hook to show toast notifications
+  useRunStatus(currentRunId);
+
+  // Debug currentRunId changes
+  useEffect(() => {
+    console.log(`NewProjectForm: currentRunId changed to: ${currentRunId}`);
+  }, [currentRunId]);
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -96,22 +111,51 @@ function NewProjectForm() {
     try {
       // Create the project
       const projectId = await createProject({ name: name.trim() });
+      console.log("Project created with ID:", projectId);
 
-      // Run the agent with the spec
-      await runAgent({
+      // Create a run first so we can start monitoring it immediately
+      const runId = await createRun({
         projectId,
-        inputSpec: spec.trim(),
-        model: "gpt-4-turbo", // Default model for MVP
-        promptVersion: "v1", // Default prompt version for MVP
+        model: "gpt-4-turbo",
+        promptVersion: "v1",
       });
 
-      // Navigate to the project page
-      router.push(`/projects/${projectId}`);
+      console.log("Run created with ID:", runId);
+
+      // Start monitoring the run status immediately
+      setCurrentRunId(runId);
+      console.log("Started monitoring run:", runId);
+
+      // Now run the agent in the background (don't await it immediately)
+      // We'll let it run while the user sees the status updates
+      runAgent({
+        projectId,
+        inputSpec: spec.trim(),
+        model: "gpt-4-turbo",
+        promptVersion: "v1",
+        runId: runId, // Pass the existing run ID
+      })
+        .then((result) => {
+          console.log("Agent run completed:", result);
+          // Navigate after a short delay to let the final status toast show
+          setTimeout(() => {
+            console.log("Navigating to project page after completion");
+            router.push(`/projects/${projectId}`);
+          }, 2000);
+        })
+        .catch((err) => {
+          console.error("Agent run failed:", err);
+          const errorMessage =
+            err instanceof Error ? err.message : "Generation failed";
+          setError(errorMessage);
+          setIsSubmitting(false);
+        });
     } catch (err) {
       const errorMessage =
         err instanceof Error
           ? err.message
           : "An error occurred. Please try again.";
+      console.error("Error during project creation:", errorMessage);
       setError(errorMessage);
       setIsSubmitting(false);
     }

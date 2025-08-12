@@ -14,10 +14,12 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { formatDistanceToNow } from "date-fns";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Id } from "@/convex/_generated/dataModel";
 import { SignInButton } from "@clerk/nextjs";
 import { Header } from "@/components/layout/header";
+import { useRunStatus } from "@/hooks/use-run-status";
+import { CodeHighlight } from "@/components/ui/code-highlight";
 
 export default function ProjectDetail({ params }: { params: { id: string } }) {
   return (
@@ -52,6 +54,37 @@ function ProjectContent({ id }: { id: string }) {
 
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState("");
+  const [currentRunId, setCurrentRunId] = useState<Id<"runs"> | undefined>(
+    undefined
+  );
+
+  // Set the latest run ID when runs data is loaded
+  useEffect(() => {
+    if (runs && runs.length > 0) {
+      const latestRun = runs[0];
+
+      // Check if there's an in-progress run and track it
+      if (["planning", "generating", "validating"].includes(latestRun.status)) {
+        console.log(
+          "Found in-progress run:",
+          latestRun._id,
+          "with status:",
+          latestRun.status
+        );
+        setCurrentRunId(latestRun._id);
+      } else if (
+        latestRun.status === "completed" &&
+        Date.now() - latestRun.createdAt < 10000
+      ) {
+        // If a run completed in the last 10 seconds, still show its status
+        console.log("Found recently completed run:", latestRun._id);
+        setCurrentRunId(latestRun._id);
+      }
+    }
+  }, [runs]);
+
+  // Use the run status hook to show toast notifications
+  useRunStatus(currentRunId);
 
   if (project === undefined || artifacts === undefined || runs === undefined) {
     return (
@@ -77,17 +110,32 @@ function ProjectContent({ id }: { id: string }) {
 
     try {
       // For MVP, we'll use a fixed spec, model and prompt version
-      await runAgent({
+      console.log("Starting regeneration for project:", projectId);
+      const result = await runAgent({
         projectId,
         inputSpec: "Todo app with title and done fields",
         model: "gpt-4-turbo",
         promptVersion: "v1",
       });
+
+      console.log("Regeneration result:", result);
+
+      // Store the run ID to track status
+      if (result && result.runId) {
+        console.log("Setting current run ID for regeneration:", result.runId);
+        setCurrentRunId(result.runId);
+
+        // Wait longer to ensure statuses change and toasts appear
+        setTimeout(() => {
+          console.log("Regeneration completed with delay");
+        }, 3000); // Increased to 3 seconds
+      }
     } catch (err) {
       const errorMessage =
         err instanceof Error
           ? err.message
           : "An error occurred. Please try again.";
+      console.error("Error during regeneration:", errorMessage);
       setError(errorMessage);
     } finally {
       setIsGenerating(false);
@@ -172,9 +220,11 @@ function ArtifactsTab({ artifacts }: { artifacts: any[] }) {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <pre className="bg-gray-50 p-4 rounded-md overflow-auto text-sm h-[200px]">
-              {artifact.content}
-            </pre>
+            <CodeHighlight
+              code={artifact.content}
+              language={artifact.path.split(".").pop() || "ts"}
+              maxHeight="300px"
+            />
           </CardContent>
         </Card>
       ))}
