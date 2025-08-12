@@ -7,6 +7,7 @@ import {
   Unauthenticated,
   useQuery,
   useAction,
+  useMutation,
 } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -20,6 +21,7 @@ import { SignInButton } from "@clerk/nextjs";
 import { Header } from "@/components/layout/header";
 import { useRunStatus } from "@/hooks/use-run-status";
 import { StackBlitzEditor } from "@/components/StackBlitzEditor";
+import { useStreamingGeneration } from "@/hooks/use-streaming-generation";
 
 export default function ProjectDetail({ params }: { params: { id: string } }) {
   return (
@@ -50,13 +52,15 @@ function ProjectContent({ id }: { id: string }) {
   const project = useQuery(api.projects.get, { id: projectId });
   const artifacts = useQuery(api.artifacts.byProject, { projectId });
   const runs = useQuery(api.runs.byProject, { projectId });
-  const runAgent = useAction(api.agent.run);
+  const createRun = useMutation(api.runs.create);
 
-  const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState("");
-  const [currentRunId, setCurrentRunId] = useState<Id<"runs"> | undefined>(
-    undefined
+  const [currentRunId, setCurrentRunId] = useState<Id<"runs"> | null>(
+    null
   );
+
+  // Initialize streaming hook
+  const streaming = useStreamingGeneration(currentRunId);
 
   // Set the latest run ID when runs data is loaded
   useEffect(() => {
@@ -84,7 +88,7 @@ function ProjectContent({ id }: { id: string }) {
   }, [runs]);
 
   // Use the run status hook to show toast notifications
-  useRunStatus(currentRunId);
+  useRunStatus(currentRunId || undefined);
 
   if (project === undefined || artifacts === undefined || runs === undefined) {
     return (
@@ -105,31 +109,27 @@ function ProjectContent({ id }: { id: string }) {
   }
 
   const handleRegenerate = async () => {
-    setIsGenerating(true);
     setError("");
 
     try {
-      // For MVP, we'll use a fixed spec, model and prompt version
-      console.log("Starting regeneration for project:", projectId);
-      const result = await runAgent({
+      // Create a new run first
+      console.log("Creating new run for project:", projectId);
+      const runId = await createRun({
         projectId,
-        inputSpec: "Todo app with title and done fields",
         model: "gpt-4-turbo",
         promptVersion: "v1",
       });
 
-      console.log("Regeneration result:", result);
+      console.log("Created run:", runId);
+      setCurrentRunId(runId);
 
-      // Store the run ID to track status
-      if (result && result.runId) {
-        console.log("Setting current run ID for regeneration:", result.runId);
-        setCurrentRunId(result.runId);
+      // Start streaming generation
+      await streaming.startGeneration(
+        projectId,
+        "Todo app with title and done fields",
+        "gpt-4-turbo"
+      );
 
-        // Wait longer to ensure statuses change and toasts appear
-        setTimeout(() => {
-          console.log("Regeneration completed with delay");
-        }, 3000); // Increased to 3 seconds
-      }
     } catch (err) {
       const errorMessage =
         err instanceof Error
@@ -137,8 +137,6 @@ function ProjectContent({ id }: { id: string }) {
           : "An error occurred. Please try again.";
       console.error("Error during regeneration:", errorMessage);
       setError(errorMessage);
-    } finally {
-      setIsGenerating(false);
     }
   };
 
@@ -148,6 +146,10 @@ function ProjectContent({ id }: { id: string }) {
     latestRun &&
     ["planning", "generating", "validating"].includes(latestRun.status);
 
+  // Determine which files to show (streaming files take precedence)
+  const activeFiles = streaming.isStreaming ? streaming.files : {};
+  const hasStreamingFiles = Object.keys(activeFiles).length > 0;
+
   return (
     <div className="max-w-6xl mx-auto text-black">
       <div className="flex justify-between items-center mb-6">
@@ -156,9 +158,9 @@ function ProjectContent({ id }: { id: string }) {
           <Button
             variant="outline"
             onClick={handleRegenerate}
-            disabled={isGenerating || !!isRunInProgress}
+            disabled={streaming.isStreaming || !!isRunInProgress}
           >
-            {isGenerating ? "Regenerating..." : "Regenerate App"}
+            {streaming.isStreaming ? "Generating..." : "Regenerate App"}
           </Button>
           <Button variant="outline" asChild>
             <Link href={`/projects/${id}/evals`}>View Evaluations</Link>
@@ -166,9 +168,34 @@ function ProjectContent({ id }: { id: string }) {
         </div>
       </div>
 
-      {error && (
+      {/* Streaming status */}
+      {streaming.isStreaming && (
+        <div className="bg-blue-50 border border-blue-200 text-blue-700 px-4 py-3 rounded mb-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <span className="font-medium">{streaming.currentPhase}</span>
+              {streaming.currentMessage && (
+                <span className="ml-2 text-sm">{streaming.currentMessage}</span>
+              )}
+            </div>
+            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
+          </div>
+          {streaming.planContent && (
+            <div className="mt-2 text-sm">
+              <details className="cursor-pointer">
+                <summary>View Plan</summary>
+                <pre className="mt-2 text-xs bg-white p-2 rounded border overflow-auto max-h-32">
+                  {streaming.planContent}
+                </pre>
+              </details>
+            </div>
+          )}
+        </div>
+      )}
+
+      {(error || streaming.error) && (
         <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded mb-6">
-          {error}
+          {error || streaming.error}
         </div>
       )}
 
@@ -176,12 +203,26 @@ function ProjectContent({ id }: { id: string }) {
         <TabsList className="mb-6">
           <TabsTrigger value="artifacts">
             Artifacts ({artifacts?.length || 0})
+            {hasStreamingFiles && (
+              <span className="ml-1 text-blue-600">
+                +{Object.keys(activeFiles).length} streaming
+              </span>
+            )}
           </TabsTrigger>
           <TabsTrigger value="runs">Runs ({runs?.length || 0})</TabsTrigger>
         </TabsList>
 
         <TabsContent value="artifacts">
-          <StackBlitzEditor artifacts={artifacts} projectName={project.name} />
+          <StackBlitzEditor 
+            artifacts={artifacts} 
+            projectName={project.name}
+            streamingFiles={activeFiles}
+            isGenerating={streaming.isStreaming}
+            currentFile={streaming.currentPhase === 'schema' ? 'convex/schema.ts' :
+                       streaming.currentPhase === 'queries' ? 'convex/queries.ts' :
+                       streaming.currentPhase === 'mutations' ? 'convex/mutations.ts' :
+                       streaming.currentPhase === 'ui' ? 'app/page.tsx' : undefined}
+          />
         </TabsContent>
 
         <TabsContent value="runs">

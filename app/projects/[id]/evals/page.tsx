@@ -110,9 +110,6 @@ function ProjectEvals({ projectId }: { projectId: Id<"projects"> }) {
           <Button variant="outline" asChild>
             <Link href={`/projects/${projectId}`}>Back to Project</Link>
           </Button>
-          <Button variant="outline" asChild>
-            <Link href={`/preview?projectId=${projectId}`}>Preview App</Link>
-          </Button>
         </div>
       </div>
 

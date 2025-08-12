@@ -27,6 +27,7 @@ import Link from "next/link";
 import { FormEvent } from "react";
 import { useRunStatus } from "@/hooks/use-run-status";
 import { useToast } from "@/components/ui/use-toast";
+import { useStreamingGeneration } from "@/hooks/use-streaming-generation";
 
 export default function NewProject() {
   return (
@@ -78,24 +79,51 @@ function SignInAndSignUpButtons() {
 function NewProjectForm() {
   const createProject = useMutation(api.projects.create);
   const createRun = useMutation(api.runs.create);
-  const runAgent = useAction(api.agent.run);
   const router = useRouter();
 
   const [name, setName] = useState("");
   const [spec, setSpec] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState("");
-  const [currentRunId, setCurrentRunId] = useState<Id<"runs"> | undefined>(
-    undefined
-  );
+  const [currentRunId, setCurrentRunId] = useState<Id<"runs"> | null>(null);
+  const [projectId, setProjectId] = useState<Id<"projects"> | null>(null);
+
+  // Initialize streaming hook
+  const streaming = useStreamingGeneration(currentRunId);
 
   // Use the run status hook to show toast notifications
-  useRunStatus(currentRunId);
+  useRunStatus(currentRunId || undefined);
 
   // Debug currentRunId changes
   useEffect(() => {
     console.log(`NewProjectForm: currentRunId changed to: ${currentRunId}`);
   }, [currentRunId]);
+
+  // Auto-navigate when streaming is complete
+  useEffect(() => {
+    if (streaming.isComplete && projectId) {
+      console.log("Streaming completed, navigating to project page");
+      setTimeout(() => {
+        router.push(`/projects/${projectId}`);
+      }, 2000); // Give time for completion toast
+    }
+  }, [streaming.isComplete, projectId, router]);
+
+  // Start streaming when run ID becomes available
+  useEffect(() => {
+    if (currentRunId && projectId && spec.trim() && !streaming.isStreaming) {
+      console.log("Starting streaming generation with run ID:", currentRunId);
+      streaming.startGeneration(
+        projectId,
+        spec.trim(),
+        "gpt-4-turbo"
+      ).catch((err) => {
+        console.error("Streaming generation failed:", err);
+        setError(err instanceof Error ? err.message : "Generation failed");
+        setIsSubmitting(false);
+      });
+    }
+  }, [currentRunId, projectId]);
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -110,12 +138,13 @@ function NewProjectForm() {
 
     try {
       // Create the project
-      const projectId = await createProject({ name: name.trim() });
-      console.log("Project created with ID:", projectId);
+      const newProjectId = await createProject({ name: name.trim() });
+      console.log("Project created with ID:", newProjectId);
+      setProjectId(newProjectId);
 
       // Create a run first so we can start monitoring it immediately
       const runId = await createRun({
-        projectId,
+        projectId: newProjectId,
         model: "gpt-4-turbo",
         promptVersion: "v1",
       });
@@ -126,30 +155,8 @@ function NewProjectForm() {
       setCurrentRunId(runId);
       console.log("Started monitoring run:", runId);
 
-      // Now run the agent in the background (don't await it immediately)
-      // We'll let it run while the user sees the status updates
-      runAgent({
-        projectId,
-        inputSpec: spec.trim(),
-        model: "gpt-4-turbo",
-        promptVersion: "v1",
-        runId: runId, // Pass the existing run ID
-      })
-        .then((result) => {
-          console.log("Agent run completed:", result);
-          // Navigate after a short delay to let the final status toast show
-          setTimeout(() => {
-            console.log("Navigating to project page after completion");
-            router.push(`/projects/${projectId}`);
-          }, 2000);
-        })
-        .catch((err) => {
-          console.error("Agent run failed:", err);
-          const errorMessage =
-            err instanceof Error ? err.message : "Generation failed";
-          setError(errorMessage);
-          setIsSubmitting(false);
-        });
+      // Streaming will start automatically via useEffect when currentRunId is set
+
     } catch (err) {
       const errorMessage =
         err instanceof Error
@@ -191,7 +198,7 @@ function NewProjectForm() {
                   placeholder="My App"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  disabled={isSubmitting}
+                  disabled={isSubmitting || streaming.isStreaming}
                 />
               </div>
 
@@ -207,7 +214,7 @@ function NewProjectForm() {
                   placeholder={exampleSpec}
                   value={spec}
                   onChange={(e) => setSpec(e.target.value)}
-                  disabled={isSubmitting}
+                  disabled={isSubmitting || streaming.isStreaming}
                   className="min-h-[150px]"
                 />
                 <p className="text-sm text-gray-500 mt-1">
@@ -215,12 +222,54 @@ function NewProjectForm() {
                 </p>
               </div>
 
-              {error && <div className="text-red-500 text-sm">{error}</div>}
+              {(error || streaming.error) && (
+                <div className="text-red-500 text-sm">{error || streaming.error}</div>
+              )}
+
+              {/* Streaming status display */}
+              {streaming.isStreaming && (
+                <div className="bg-blue-50 border border-blue-200 text-blue-700 px-4 py-3 rounded">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <span className="font-medium">{streaming.currentPhase}</span>
+                      {streaming.currentMessage && (
+                        <span className="ml-2 text-sm">{streaming.currentMessage}</span>
+                      )}
+                    </div>
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
+                  </div>
+                  {streaming.planContent && (
+                    <div className="mt-2 text-sm">
+                      <details className="cursor-pointer">
+                        <summary>View Plan</summary>
+                        <pre className="mt-2 text-xs bg-white p-2 rounded border overflow-auto max-h-32">
+                          {streaming.planContent}
+                        </pre>
+                      </details>
+                    </div>
+                  )}
+                  {Object.keys(streaming.files).length > 0 && (
+                    <div className="mt-2 text-sm">
+                      <div className="text-xs text-blue-600">
+                        Generated files: {Object.keys(streaming.files).join(", ")}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
             <div className="mt-6">
-              <Button type="submit" className="w-full" disabled={isSubmitting}>
-                {isSubmitting ? "Generating App..." : "Generate App"}
+              <Button 
+                type="submit" 
+                className="w-full" 
+                disabled={isSubmitting || streaming.isStreaming}
+              >
+                {streaming.isStreaming 
+                  ? `Generating (${streaming.currentPhase})...` 
+                  : isSubmitting 
+                    ? "Creating Project..." 
+                    : "Generate App"}
               </Button>
             </div>
           </form>

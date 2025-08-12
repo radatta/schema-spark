@@ -123,17 +123,6 @@ export default function WebContainerConnectRoute({
       </div>
 
       <div className="space-y-4 mb-6">
-        {projectId && (
-          <div>
-            <Link
-              href={`/preview?projectId=${projectId}`}
-              className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 inline-block"
-            >
-              Return to Project Preview
-            </Link>
-          </div>
-        )}
-
         {directUrl && (
           <div>
             <a

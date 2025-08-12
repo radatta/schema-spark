@@ -115,11 +115,6 @@ function ProjectsList() {
                       View Details
                     </Link>
                   </Button>
-                  <Button variant="outline" size="sm" asChild>
-                    <Link href={`/preview?projectId=${project._id}`}>
-                      Preview App
-                    </Link>
-                  </Button>
                 </div>
               </div>
             </Card>

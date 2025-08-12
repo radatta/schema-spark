@@ -12,11 +12,18 @@ interface StackBlitzEditorProps {
     version: number;
   }>;
   projectName: string;
+  // New props for streaming
+  streamingFiles?: Record<string, string>;
+  isGenerating?: boolean;
+  currentFile?: string;
 }
 
 export function StackBlitzEditor({
   artifacts,
   projectName,
+  streamingFiles = {},
+  isGenerating = false,
+  currentFile,
 }: StackBlitzEditorProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const vmRef = useRef<VM | null>(null);
@@ -142,6 +149,38 @@ export function StackBlitzEditor({
       }
     };
   }, [mounted, artifacts, projectName]);
+
+  // Handle streaming file updates
+  useEffect(() => {
+    if (!vmRef.current || !isGenerating || Object.keys(streamingFiles).length === 0) {
+      return;
+    }
+
+    // Apply file updates using applyFsDiff
+    const filesToUpdate: Record<string, string> = {};
+    
+    for (const [filePath, content] of Object.entries(streamingFiles)) {
+      if (content && content.trim()) {
+        filesToUpdate[filePath] = content;
+      }
+    }
+
+    if (Object.keys(filesToUpdate).length > 0) {
+      vmRef.current.applyFsDiff({
+        create: filesToUpdate,
+        destroy: [], // Required property for FsDiff
+      }).catch((error) => {
+        console.error("Failed to update streaming files:", error);
+      });
+
+      // Open the current file being generated if specified
+      if (currentFile && vmRef.current.editor && filesToUpdate[currentFile]) {
+        vmRef.current.editor.openFile(currentFile).catch((error) => {
+          console.error("Failed to open current file:", error);
+        });
+      }
+    }
+  }, [streamingFiles, isGenerating, currentFile]);
 
   if (!artifacts.length) {
     return (
